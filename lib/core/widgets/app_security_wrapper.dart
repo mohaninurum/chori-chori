@@ -1,7 +1,7 @@
 import 'dart:io';
 import 'dart:ui';
 import 'package:flutter/material.dart';
-import 'package:flutter_windowmanager/flutter_windowmanager.dart';
+import 'package:flutter_windowmanager_plus/flutter_windowmanager_plus.dart';
 import 'package:local_auth/local_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -36,7 +36,7 @@ class _AppSecurityWrapperState extends State<AppSecurityWrapper> with WidgetsBin
   Future<void> _secureScreen() async {
     if (Platform.isAndroid) {
       // Prevents screenshots and screen recording on Android
-      await FlutterWindowManager.addFlags(FlutterWindowManager.FLAG_SECURE);
+      await FlutterWindowManagerPlus.addFlags(FlutterWindowManagerPlus.FLAG_SECURE);
     }
   }
 
