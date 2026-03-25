@@ -51,8 +51,10 @@ class _RoomCreateScreenState extends ConsumerState<RoomCreateScreen> {
     if (success && mounted) {
       context.go(Routes.chat); // Navigate to chat on success
     } else if (mounted) {
+      final roomState = ref.read(currentRoomProvider);
+      final errorMsg = roomState.hasError ? roomState.error.toString() : 'Failed to create room';
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to create room. Firebase configured?')),
+        SnackBar(content: Text(errorMsg)),
       );
     }
   }
