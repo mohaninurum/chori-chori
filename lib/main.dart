@@ -10,8 +10,8 @@ void main() async {
   
   try {
     await Firebase.initializeApp();
-  } catch (e) {
-    debugPrint("Firebase not configured: $e");
+  } catch (_) {
+    // Silently fallback to mock mode without printing the error to the console
   }
 
   runApp(
