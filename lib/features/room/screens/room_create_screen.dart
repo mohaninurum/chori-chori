@@ -16,13 +16,11 @@ class RoomCreateScreen extends ConsumerStatefulWidget {
 
 class _RoomCreateScreenState extends ConsumerState<RoomCreateScreen> {
   final _nameController = TextEditingController();
-  final _passcodeController = TextEditingController();
   int _expiryMinutes = 60; // default 1 hour
 
   @override
   void dispose() {
     _nameController.dispose();
-    _passcodeController.dispose();
     super.dispose();
   }
 
@@ -34,9 +32,9 @@ class _RoomCreateScreenState extends ConsumerState<RoomCreateScreen> {
   }
 
   void _createRoom() async {
-    if (_nameController.text.isEmpty || _passcodeController.text.isEmpty) {
+    if (_nameController.text.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please fill all fields')),
+        const SnackBar(content: Text('Please enter a room name')),
       );
       return;
     }
@@ -45,7 +43,6 @@ class _RoomCreateScreenState extends ConsumerState<RoomCreateScreen> {
     final room = Room(
       id: _generateRoomId(),
       name: _nameController.text,
-      passcode: _passcodeController.text,
       createdAt: now,
       expiresAt: now.add(Duration(minutes: _expiryMinutes)),
     );
@@ -87,15 +84,6 @@ class _RoomCreateScreenState extends ConsumerState<RoomCreateScreen> {
                   labelText: 'Room Name',
                   border: OutlineInputBorder(),
                   prefixIcon: Icon(Icons.meeting_room, color: AppTheme.primaryNeon),
-                ),
-              ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: _passcodeController,
-                decoration: const InputDecoration(
-                  labelText: 'Passcode (Make it secret!)',
-                  border: OutlineInputBorder(),
-                  prefixIcon: Icon(Icons.lock_outline, color: AppTheme.primaryNeon),
                 ),
               ),
               const SizedBox(height: 24),

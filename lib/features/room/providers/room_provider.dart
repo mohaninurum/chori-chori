@@ -53,11 +53,11 @@ class RoomNotifier extends AsyncNotifier<Room?> {
     }
   }
 
-  Future<bool> joinRoom(String id, String passcode) async {
+  Future<bool> joinRoom(String id) async {
     state = const AsyncLoading();
     try {
       final room = await ref.read(roomRepositoryProvider).getRoom(id);
-      if (room != null && room.status == RoomStatus.active && room.passcode == passcode) {
+      if (room != null && room.status == RoomStatus.active) {
         if (DateTime.now().isBefore(room.expiresAt)) {
           state = AsyncData(room);
           return true;
@@ -66,7 +66,7 @@ class RoomNotifier extends AsyncNotifier<Room?> {
           return false;
         }
       } else {
-        state = AsyncError("Invalid room ID or passcode.", StackTrace.current);
+        state = AsyncError("Invalid room ID.", StackTrace.current);
         return false;
       }
     } catch (e, st) {

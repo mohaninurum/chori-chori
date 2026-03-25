@@ -14,26 +14,23 @@ class RoomJoinScreen extends ConsumerStatefulWidget {
 
 class _RoomJoinScreenState extends ConsumerState<RoomJoinScreen> {
   final _idController = TextEditingController();
-  final _passcodeController = TextEditingController();
 
   @override
   void dispose() {
     _idController.dispose();
-    _passcodeController.dispose();
     super.dispose();
   }
 
   void _joinRoom() async {
-    if (_idController.text.isEmpty || _passcodeController.text.isEmpty) {
+    if (_idController.text.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter Room ID and Passcode')),
+        const SnackBar(content: Text('Please enter Room ID')),
       );
       return;
     }
 
     final success = await ref.read(currentRoomProvider.notifier).joinRoom(
-      _idController.text.trim().toUpperCase(), 
-      _passcodeController.text.trim()
+      _idController.text.trim().toUpperCase()
     );
 
     if (success && mounted) {
@@ -75,16 +72,6 @@ class _RoomJoinScreenState extends ConsumerState<RoomJoinScreen> {
                   labelText: 'Room ID',
                   border: OutlineInputBorder(),
                   prefixIcon: Icon(Icons.vpn_key, color: AppTheme.secondaryNeon),
-                ),
-              ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: _passcodeController,
-                obscureText: true,
-                decoration: const InputDecoration(
-                  labelText: 'Secret Passcode',
-                  border: OutlineInputBorder(),
-                  prefixIcon: Icon(Icons.lock, color: AppTheme.secondaryNeon),
                 ),
               ),
               const SizedBox(height: 48),
