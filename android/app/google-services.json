@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "111230654655",
+    "project_id": "mohan-1234-test-project",
+    "storage_bucket": "mohan-1234-test-project.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:111230654655:android:19a5beef1270406c3d8e0a",
+        "android_client_info": {
+          "package_name": "com.chorichori.chori_chori"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCt7-5YafV2nlXfqZsiCfQ4l1qJ0AfieNg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
