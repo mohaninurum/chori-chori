@@ -35,6 +35,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
   int _expiresInSeconds = 0;
   Timer? _heartbeatTimer;
   bool _isCallDialogShowing = false;
+  bool _isAudioCallDialogShowing = false;
   bool _isRecordingVoice = false;
   int _recordDurationSeconds = 0;
   Timer? _recordTimer;
@@ -194,6 +195,96 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
       ),
     ).then((_) {
       _isCallDialogShowing = false;
+    });
+  }
+
+  void _showIncomingAudioCallDialog(String roomId) {
+    if (_isAudioCallDialogShowing || !mounted) return;
+    _isAudioCallDialogShowing = true;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1E1E2C),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(24),
+          side: const BorderSide(color: Color(0xFF00FF88), width: 1.5),
+        ),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: const Color(0xFF00FF88).withOpacity(0.15),
+              ),
+              child: const Icon(Icons.phone_in_talk_rounded, color: Color(0xFF00FF88), size: 28),
+            ),
+            const SizedBox(width: 12),
+            const Expanded(
+              child: Text(
+                'Incoming Voice Call',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ],
+        ),
+        content: const Text(
+          'Your partner is requesting a voice call in this room.\n\n'
+          '• Accept: Join voice call immediately\n'
+          '• Reject: Decline call and continue chatting',
+          style: TextStyle(color: Colors.white70, fontSize: 13, height: 1.4),
+        ),
+        actionsPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        actions: [
+          OutlinedButton.icon(
+            style: OutlinedButton.styleFrom(
+              side: const BorderSide(color: Colors.redAccent),
+              foregroundColor: Colors.redAccent,
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            icon: const Icon(Icons.call_end, size: 16),
+            label: const Text('Reject Call', style: TextStyle(fontWeight: FontWeight.bold)),
+            onPressed: () async {
+              Navigator.of(ctx).pop();
+              _isAudioCallDialogShowing = false;
+              await ref.read(audioWebRTCProvider).rejectCall(roomId);
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Voice call rejected. Chat continues.'),
+                    duration: Duration(seconds: 2),
+                    backgroundColor: Colors.white24,
+                  ),
+                );
+              }
+            },
+          ),
+          ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF00FF88),
+              foregroundColor: Colors.black87,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            icon: const Icon(Icons.phone, size: 18),
+            label: const Text('Accept Call', style: TextStyle(fontWeight: FontWeight.bold)),
+            onPressed: () {
+              Navigator.of(ctx).pop();
+              _isAudioCallDialogShowing = false;
+              context.push(Routes.audioCall);
+            },
+          ),
+        ],
+      ),
+    ).then((_) {
+      _isAudioCallDialogShowing = false;
     });
   }
 
@@ -570,6 +661,12 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
         callData['status'] == 'calling' &&
         callData['callerId'] != currentUserId;
 
+    final audioCallSessionAsync = ref.watch(audioCallSessionStreamProvider(room.id));
+    final audioCallData = audioCallSessionAsync.value;
+    final isIncomingAudioCall = audioCallData != null &&
+        audioCallData['status'] == 'calling' &&
+        audioCallData['callerId'] != currentUserId;
+
     ref.listen<AsyncValue<Map<String, dynamic>?>>(
       callSessionStreamProvider(room.id),
       (previous, next) {
@@ -588,6 +685,29 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
           if (mounted && Navigator.of(context, rootNavigator: true).canPop()) {
             Navigator.of(context, rootNavigator: true).pop();
             _isCallDialogShowing = false;
+          }
+        }
+      },
+    );
+
+    ref.listen<AsyncValue<Map<String, dynamic>?>>(
+      audioCallSessionStreamProvider(room.id),
+      (previous, next) {
+        final data = next.value;
+        final isCalling = data != null &&
+            data['status'] == 'calling' &&
+            data['callerId'] != currentUserId;
+
+        if (isCalling && !_isAudioCallDialogShowing) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted && !_isAudioCallDialogShowing) {
+              _showIncomingAudioCallDialog(room.id);
+            }
+          });
+        } else if (!isCalling && _isAudioCallDialogShowing) {
+          if (mounted && Navigator.of(context, rootNavigator: true).canPop()) {
+            Navigator.of(context, rootNavigator: true).pop();
+            _isAudioCallDialogShowing = false;
           }
         }
       },
@@ -668,9 +788,20 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
               ),
               IconButton(
                 icon: Icon(
+                  Icons.phone,
+                  color: isIncomingAudioCall ? const Color(0xFF00FF88) : AppTheme.secondaryNeon,
+                ),
+                tooltip: 'Voice Call',
+                onPressed: () {
+                  context.push(Routes.audioCall);
+                },
+              ),
+              IconButton(
+                icon: Icon(
                   Icons.videocam,
                   color: isIncomingCall ? const Color(0xFF00FF88) : AppTheme.primaryNeon,
                 ),
+                tooltip: 'Video Call',
                 onPressed: () {
                   context.push(Routes.videoCall);
                 },
@@ -692,6 +823,75 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
             ),
             child: Column(
               children: [
+                if (isIncomingAudioCall)
+                  Container(
+                    margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFF142F43), Color(0xFF0B4F6C)],
+                      ),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: const Color(0xFF00FF88), width: 1.5),
+                      boxShadow: [
+                        BoxShadow(
+                          color: const Color(0xFF00FF88).withOpacity(0.3),
+                          blurRadius: 10,
+                          spreadRadius: 2,
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: const BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: Colors.white12,
+                          ),
+                          child: const Icon(Icons.phone_in_talk_rounded, color: Color(0xFF00FF88), size: 22),
+                        ),
+                        const SizedBox(width: 12),
+                        const Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Incoming Voice Call',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 13,
+                                ),
+                              ),
+                              Text(
+                                'Partner is calling you...',
+                                style: TextStyle(color: Colors.white70, fontSize: 11),
+                              ),
+                            ],
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.call_end, color: Colors.redAccent, size: 20),
+                          tooltip: 'Reject Call',
+                          onPressed: () async {
+                            await ref.read(audioWebRTCProvider).rejectCall(room.id);
+                          },
+                        ),
+                        const SizedBox(width: 4),
+                        ElevatedButton.icon(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF00FF88),
+                            foregroundColor: Colors.black87,
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                          ),
+                          icon: const Icon(Icons.phone, size: 16),
+                          label: const Text('Accept', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                          onPressed: () => context.push(Routes.audioCall),
+                        ),
+                      ],
+                    ),
+                  ),
                 if (isIncomingCall)
                   Container(
                     margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),

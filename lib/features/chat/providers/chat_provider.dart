@@ -60,7 +60,6 @@ class ChatRepository implements BaseChatRepository {
           .delete();
     } catch (e) {
       // Message might already be deleted by partner's countdown
-      debugPrint('Self-destruct delete message exception: $e');
     }
   }
 }

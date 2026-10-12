@@ -6,6 +6,7 @@ class Routes {
   static const roomJoin = '/room/join';
   static const chat = '/chat';
   static const videoCall = '/video-call';
+  static const audioCall = '/audio-call';
   static const loveMeter = '/love-meter';
   static const sharedNotes = '/shared-notes';
 }

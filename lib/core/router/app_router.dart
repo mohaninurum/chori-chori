@@ -5,6 +5,7 @@ import '../../features/room/screens/room_create_screen.dart';
 import '../../features/room/screens/room_join_screen.dart';
 import '../../features/chat/screens/chat_screen.dart';
 import '../../features/video_call/screens/video_call_screen.dart';
+import '../../features/video_call/screens/audio_call_screen.dart';
 import '../../features/couple/screens/love_meter_screen.dart';
 import '../../features/couple/screens/shared_notes_screen.dart';
 
@@ -30,6 +31,10 @@ final appRouter = GoRouter(
     GoRoute(
       path: Routes.videoCall,
       builder: (context, state) => const VideoCallScreen(),
+    ),
+    GoRoute(
+      path: Routes.audioCall,
+      builder: (context, state) => const AudioCallScreen(),
     ),
     GoRoute(
       path: Routes.loveMeter,

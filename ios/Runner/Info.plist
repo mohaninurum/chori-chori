@@ -9,7 +9,7 @@
 	<key>NSCameraUsageDescription</key>
 	<string>Camera access is needed for video calls</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Microphone access is needed for video calls</string>
+	<string>Microphone access is needed for voice and video calls</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>

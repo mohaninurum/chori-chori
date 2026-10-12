@@ -10,11 +10,14 @@ enum CallStatus { idle, calling, connected, ended, rejected, error }
 
 class WebRTCRepository {
   final FirebaseFirestore? _firestore;
+  final bool isAudioOnly;
   RTCPeerConnection? _peerConnection;
   MediaStream? _localStream;
   MediaStream? _remoteStream;
   String? _roomId;
   String? _userId;
+
+  String get _sessionDocName => isAudioOnly ? 'audio_session' : 'session';
 
   StreamSubscription? _sessionSubscription;
   StreamSubscription? _candidatesSubscription;
@@ -26,7 +29,7 @@ class WebRTCRepository {
 
   CallStatus status = CallStatus.idle;
 
-  WebRTCRepository(this._firestore);
+  WebRTCRepository(this._firestore, {this.isAudioOnly = false});
 
   void _setStatus(CallStatus newStatus) {
     status = newStatus;
@@ -37,10 +40,12 @@ class WebRTCRepository {
     try {
       final mediaConstraints = <String, dynamic>{
         'audio': true,
-        'video': {
-          'facingMode': 'user',
-          'optional': [],
-        },
+        'video': isAudioOnly
+            ? false
+            : {
+                'facingMode': 'user',
+                'optional': [],
+              },
       };
 
       _localStream = await navigator.mediaDevices.getUserMedia(mediaConstraints);
@@ -50,7 +55,7 @@ class WebRTCRepository {
       return true;
     } catch (e, st) {
       debugPrint('Error getting user media: $e\n$st');
-      onError?.call('Could not access camera/mic: $e');
+      onError?.call('Could not access ${isAudioOnly ? "microphone" : "camera/mic"}: $e');
       _setStatus(CallStatus.error);
       return false;
     }
@@ -89,7 +94,7 @@ class WebRTCRepository {
             .collection('rooms')
             .doc(_roomId)
             .collection('call')
-            .doc('session')
+            .doc(_sessionDocName)
             .collection(targetCandidateCollection)
             .add(candidate.toMap())
             .catchError((e) {
@@ -110,7 +115,7 @@ class WebRTCRepository {
     }
 
     try {
-      final sessionRef = _firestore.collection('rooms').doc(cleanRoomId).collection('call').doc('session');
+      final sessionRef = _firestore.collection('rooms').doc(cleanRoomId).collection('call').doc(_sessionDocName);
       final snapshot = await sessionRef.get();
       final data = snapshot.data();
 
@@ -138,7 +143,7 @@ class WebRTCRepository {
     await _createPeerConnection(true);
 
     final offer = await _peerConnection!.createOffer(<String, dynamic>{
-      'offerToReceiveVideo': 1,
+      'offerToReceiveVideo': isAudioOnly ? 0 : 1,
       'offerToReceiveAudio': 1,
     });
     await _peerConnection!.setLocalDescription(offer);
@@ -146,6 +151,7 @@ class WebRTCRepository {
     await sessionRef.set({
       'callerId': _userId,
       'status': 'calling',
+      'callType': isAudioOnly ? 'audio' : 'video',
       'offer': offer.toMap(),
       'createdAt': FieldValue.serverTimestamp(),
     });
@@ -194,7 +200,7 @@ class WebRTCRepository {
     );
 
     final answer = await _peerConnection!.createAnswer(<String, dynamic>{
-      'offerToReceiveVideo': 1,
+      'offerToReceiveVideo': isAudioOnly ? 0 : 1,
       'offerToReceiveAudio': 1,
     });
     await _peerConnection!.setLocalDescription(answer);
@@ -252,6 +258,14 @@ class WebRTCRepository {
     }
   }
 
+  void toggleSpeaker(bool enabled) {
+    try {
+      Helper.setSpeakerphoneOn(enabled);
+    } catch (e) {
+      debugPrint('Error toggling speakerphone: $e');
+    }
+  }
+
   Future<void> rejectCall(String? roomId) async {
     if (roomId != null && _firestore != null) {
       final cleanRoomId = roomId.trim().toUpperCase();
@@ -260,7 +274,7 @@ class WebRTCRepository {
             .collection('rooms')
             .doc(cleanRoomId)
             .collection('call')
-            .doc('session')
+            .doc(_sessionDocName)
             .set({
               'status': 'rejected',
               'endedAt': FieldValue.serverTimestamp(),
@@ -279,7 +293,7 @@ class WebRTCRepository {
             .collection('rooms')
             .doc(cleanRoomId)
             .collection('call')
-            .doc('session')
+            .doc(_sessionDocName)
             .set({
               'status': 'ended',
               'endedAt': FieldValue.serverTimestamp(),
@@ -320,7 +334,14 @@ class WebRTCRepository {
 
 final webRTCProvider = Provider.autoDispose<WebRTCRepository>((ref) {
   final firestore = Firebase.apps.isNotEmpty ? ref.watch(firestoreProvider) : null;
-  final repo = WebRTCRepository(firestore);
+  final repo = WebRTCRepository(firestore, isAudioOnly: false);
+  ref.onDispose(() => repo.dispose());
+  return repo;
+});
+
+final audioWebRTCProvider = Provider.autoDispose<WebRTCRepository>((ref) {
+  final firestore = Firebase.apps.isNotEmpty ? ref.watch(firestoreProvider) : null;
+  final repo = WebRTCRepository(firestore, isAudioOnly: true);
   ref.onDispose(() => repo.dispose());
   return repo;
 });
@@ -335,6 +356,20 @@ final callSessionStreamProvider =
       .doc(roomId)
       .collection('call')
       .doc('session')
+      .snapshots()
+      .map((snap) => snap.data());
+});
+
+final audioCallSessionStreamProvider =
+    StreamProvider.autoDispose.family<Map<String, dynamic>?, String>((ref, roomId) {
+  if (Firebase.apps.isEmpty) {
+    return Stream.value(null);
+  }
+  return FirebaseFirestore.instance
+      .collection('rooms')
+      .doc(roomId)
+      .collection('call')
+      .doc('audio_session')
       .snapshots()
       .map((snap) => snap.data());
 });
