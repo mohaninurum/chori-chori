@@ -1,5 +1,6 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:go_router/go_router.dart';
@@ -26,7 +27,8 @@ class _RoomCreateScreenState extends ConsumerState<RoomCreateScreen> {
   }
 
   String _generateRoomId() {
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    // Avoid easily confused characters: 0/O, 1/I
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
     final rnd = Random();
     return String.fromCharCodes(Iterable.generate(
         6, (_) => chars.codeUnitAt(rnd.nextInt(chars.length))));
@@ -43,13 +45,21 @@ class _RoomCreateScreenState extends ConsumerState<RoomCreateScreen> {
     final now = DateTime.now();
     final room = Room(
       id: _generateRoomId(),
-      name: _nameController.text,
+      name: _nameController.text.trim(),
       createdAt: now,
       expiresAt: now.add(Duration(minutes: _expiryMinutes)),
     );
 
     final success = await ref.read(currentRoomProvider.notifier).createAndJoinRoom(room);
     if (success && mounted) {
+      Clipboard.setData(ClipboardData(text: room.id));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Room created! Code "${room.id}" copied to clipboard.'),
+          backgroundColor: AppTheme.primaryNeon,
+          duration: const Duration(seconds: 3),
+        ),
+      );
       context.go(Routes.chat); // Navigate to chat on success
     } else if (mounted) {
       final roomState = ref.read(currentRoomProvider);

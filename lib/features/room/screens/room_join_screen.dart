@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:go_router/go_router.dart';
@@ -23,16 +24,17 @@ class _RoomJoinScreenState extends ConsumerState<RoomJoinScreen> {
   }
 
   void _joinRoom() async {
-    if (_idController.text.isEmpty) {
+    final input = _idController.text.trim();
+    if (input.isEmpty) {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('Please enter Room ID')));
+      ).showSnackBar(const SnackBar(content: Text('Please enter Room ID or Room Name')));
       return;
     }
 
     final success = await ref
         .read(currentRoomProvider.notifier)
-        .joinRoom(_idController.text.trim().toUpperCase());
+        .joinRoom(input);
 
     if (success && mounted) {
       context.go(Routes.chat); // Navigate to chat on success
@@ -80,13 +82,26 @@ class _RoomJoinScreenState extends ConsumerState<RoomJoinScreen> {
               const SizedBox(height: 40),
               TextField(
                 controller: _idController,
-                textCapitalization: TextCapitalization.characters,
-                decoration: const InputDecoration(
-                  labelText: 'Room ID',
-                  border: OutlineInputBorder(),
-                  prefixIcon: Icon(
+                textCapitalization: TextCapitalization.none,
+                decoration: InputDecoration(
+                  labelText: 'Room ID or Room Name',
+                  hintText: 'Enter 6-character code (e.g. 7X9K2P)',
+                  border: const OutlineInputBorder(),
+                  prefixIcon: const Icon(
                     Icons.vpn_key,
                     color: AppTheme.secondaryNeon,
+                  ),
+                  suffixIcon: IconButton(
+                    icon: const Icon(Icons.content_paste, color: AppTheme.secondaryNeon),
+                    tooltip: 'Paste from clipboard',
+                    onPressed: () async {
+                      final data = await Clipboard.getData(Clipboard.kTextPlain);
+                      if (data?.text != null) {
+                        setState(() {
+                          _idController.text = data!.text!.trim().toUpperCase();
+                        });
+                      }
+                    },
                   ),
                 ),
               ),
