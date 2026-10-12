@@ -1,6 +1,7 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/router/routes.dart';
 import '../../../core/theme/app_theme.dart';
@@ -52,9 +53,24 @@ class _RoomCreateScreenState extends ConsumerState<RoomCreateScreen> {
       context.go(Routes.chat); // Navigate to chat on success
     } else if (mounted) {
       final roomState = ref.read(currentRoomProvider);
-      final errorMsg = roomState.hasError ? roomState.error.toString() : 'Failed to create room';
+      String errorMsg = 'Failed to create room';
+      if (roomState.hasError) {
+        final err = roomState.error;
+        if (err is FirebaseException) {
+          if (err.code == 'permission-denied') {
+            errorMsg = 'Firestore Permission Denied. Check Firestore security rules in Firebase Console.';
+          } else {
+            errorMsg = 'Firebase Error: ${err.message ?? err.code}';
+          }
+        } else {
+          errorMsg = err.toString();
+        }
+      }
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(errorMsg)),
+        SnackBar(
+          content: Text(errorMsg),
+          backgroundColor: Colors.redAccent,
+        ),
       );
     }
   }

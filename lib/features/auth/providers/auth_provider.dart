@@ -1,3 +1,4 @@
+import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'dart:async';
@@ -9,6 +10,9 @@ final firebaseAuthProvider = Provider<FirebaseAuth>((ref) {
 
 // Stream of Auth State Changes
 final authStateChangesProvider = StreamProvider<User?>((ref) {
+  if (Firebase.apps.isEmpty) {
+    return Stream.value(null);
+  }
   return ref.watch(firebaseAuthProvider).authStateChanges();
 });
 

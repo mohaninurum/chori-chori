@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/router/routes.dart';
 import '../../../core/theme/app_theme.dart';
@@ -23,24 +24,36 @@ class _RoomJoinScreenState extends ConsumerState<RoomJoinScreen> {
 
   void _joinRoom() async {
     if (_idController.text.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter Room ID')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Please enter Room ID')));
       return;
     }
 
-    final success = await ref.read(currentRoomProvider.notifier).joinRoom(
-      _idController.text.trim().toUpperCase()
-    );
+    final success = await ref
+        .read(currentRoomProvider.notifier)
+        .joinRoom(_idController.text.trim().toUpperCase());
 
     if (success && mounted) {
       context.go(Routes.chat); // Navigate to chat on success
     } else if (mounted) {
       final state = ref.read(currentRoomProvider);
-      final errorMsg = state.hasError ? state.error.toString() : 'Failed to join room';
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(errorMsg)),
-      );
+      String errorMsg = 'Failed to join room!';
+      if (state.hasError) {
+        final err = state.error;
+        if (err is FirebaseException) {
+          if (err.code == 'permission-denied') {
+            errorMsg = 'Firestore Permission Denied. Check Firestore security rules in Firebase Console.';
+          } else {
+            errorMsg = 'Firebase Error: ${err.message ?? err.code}';
+          }
+        } else {
+          errorMsg = err.toString();
+        }
+      }
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(errorMsg), backgroundColor: Colors.redAccent));
     }
   }
 
@@ -71,17 +84,29 @@ class _RoomJoinScreenState extends ConsumerState<RoomJoinScreen> {
                 decoration: const InputDecoration(
                   labelText: 'Room ID',
                   border: OutlineInputBorder(),
-                  prefixIcon: Icon(Icons.vpn_key, color: AppTheme.secondaryNeon),
+                  prefixIcon: Icon(
+                    Icons.vpn_key,
+                    color: AppTheme.secondaryNeon,
+                  ),
                 ),
               ),
               const SizedBox(height: 48),
               if (isLoading)
-                const Center(child: CircularProgressIndicator(color: AppTheme.secondaryNeon))
+                const Center(
+                  child: CircularProgressIndicator(
+                    color: AppTheme.secondaryNeon,
+                  ),
+                )
               else
                 ElevatedButton(
                   onPressed: _joinRoom,
-                  style: ElevatedButton.styleFrom(backgroundColor: AppTheme.secondaryNeon),
-                  child: const Text('Enter Room', style: TextStyle(fontSize: 16, color: Colors.black87)),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppTheme.secondaryNeon,
+                  ),
+                  child: const Text(
+                    'Enter Room',
+                    style: TextStyle(fontSize: 16, color: Colors.black87),
+                  ),
                 ),
             ],
           ),

@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/room_model.dart';
 import 'dart:async';
@@ -84,6 +85,7 @@ class RoomNotifier extends AsyncNotifier<Room?> {
       state = AsyncData(room);
       return true;
     } catch (e, st) {
+      debugPrint('Error creating room: $e\n$st');
       state = AsyncError(e, st);
       return false;
     }
@@ -106,6 +108,7 @@ class RoomNotifier extends AsyncNotifier<Room?> {
         return false;
       }
     } catch (e, st) {
+      debugPrint('Error joining room: $e\n$st');
       state = AsyncError(e, st);
       return false;
     }

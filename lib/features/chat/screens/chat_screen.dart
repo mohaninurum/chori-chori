@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:go_router/go_router.dart';
 import 'package:uuid/uuid.dart';
 import '../../auth/providers/auth_provider.dart';
@@ -22,6 +24,22 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   final _messageController = TextEditingController();
   bool _isSecretMode = false;
   int _expiresInSeconds = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _ensureAuth();
+  }
+
+  void _ensureAuth() async {
+    try {
+      if (Firebase.apps.isNotEmpty && FirebaseAuth.instance.currentUser == null) {
+        await FirebaseAuth.instance.signInAnonymously();
+      }
+    } catch (e) {
+      debugPrint('Anonymous sign-in in ChatScreen failed: $e');
+    }
+  }
 
   @override
   void dispose() {
@@ -51,11 +69,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     if (_messageController.text.trim().isEmpty) return;
 
     final roomState = ref.read(currentRoomProvider);
-    final user = ref.read(authStateChangesProvider).value;
+    final user = ref.read(authStateChangesProvider).value ?? FirebaseAuth.instance.currentUser;
     final roomId = roomState.value?.id;
-    final userId = user?.uid;
+    final userId = user?.uid ?? 'guest_user';
 
-    if (roomId != null && userId != null) {
+    if (roomId != null) {
       final message = ChatMessage(
         id: const Uuid().v4(),
         senderId: userId,
@@ -75,13 +93,15 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   Widget build(BuildContext context) {
     final roomState = ref.watch(currentRoomProvider);
     final room = roomState.value;
-    final user = ref.watch(authStateChangesProvider).value;
+    final user = ref.watch(authStateChangesProvider).value ?? FirebaseAuth.instance.currentUser;
 
-    if (room == null || user == null) {
+    if (room == null) {
       return const Scaffold(
         body: Center(child: CircularProgressIndicator()),
       );
     }
+
+    final currentUserId = user?.uid ?? 'guest_user';
 
     final liveRoomAsync = ref.watch(roomRepositoryProvider).watchRoom(room.id);
     final messagesAsync = ref.watch(messagesStreamProvider(room.id));
@@ -158,7 +178,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                           final msg = messages[index];
                           return MessageBubble(
                             message: msg,
-                            isMe: msg.senderId == user.uid,
+                            isMe: msg.senderId == currentUserId,
                             roomId: room.id,
                           );
                         },
