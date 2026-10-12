@@ -39,6 +39,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
   int _recordDurationSeconds = 0;
   Timer? _recordTimer;
   bool _isSendingMedia = false;
+  bool _isExitingRoom = false;
 
   @override
   void initState() {
@@ -242,19 +243,23 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
   }
 
   void _destroyRoom() async {
-    final room = ref.read(currentRoomProvider).value;
+    if (_isExitingRoom) return;
+    _isExitingRoom = true;
+    _heartbeatTimer?.cancel();
     _setPresence(false);
 
     if (mounted) {
+      ScaffoldMessenger.of(context).clearSnackBars();
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Room closing... Database se saara data delete ho raha hai.'),
+          content: Text('Room close ho gaya hai aur data delete ho chuka hai.'),
           backgroundColor: Colors.redAccent,
           duration: Duration(seconds: 2),
         ),
       );
     }
 
+    final room = ref.read(currentRoomProvider).value;
     if (room != null) {
       await ref.read(currentRoomProvider.notifier).closeAndDestroyRoom(room.id);
     }
@@ -265,13 +270,18 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
   }
 
   void _onRoomExpiredOrDeleted() {
+    if (_isExitingRoom) return;
+    _isExitingRoom = true;
+    _heartbeatTimer?.cancel();
     _setPresence(false);
+
     if (mounted) {
+      ScaffoldMessenger.of(context).clearSnackBars();
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Room close ho chuka hai aur database se data delete ho gaya hai.'),
+          content: Text('Room close ho chuka hai aur data delete ho gaya hai.'),
           backgroundColor: Colors.redAccent,
-          duration: Duration(seconds: 3),
+          duration: Duration(seconds: 2),
         ),
       );
       context.go(Routes.home);
@@ -279,6 +289,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
   }
 
   void _onRoomExpired() {
+    if (_isExitingRoom) return;
+    _isExitingRoom = true;
+    _heartbeatTimer?.cancel();
+    _setPresence(false);
+
     final room = ref.read(currentRoomProvider).value;
     if (room != null) {
       ref.read(currentRoomProvider.notifier).closeAndDestroyRoom(room.id);
@@ -582,9 +597,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
       stream: liveRoomAsync,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.active && (!snapshot.hasData || snapshot.data == null)) {
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            _onRoomExpiredOrDeleted();
-          });
+          if (!_isExitingRoom) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              _onRoomExpiredOrDeleted();
+            });
+          }
           return const Scaffold(body: Center(child: CircularProgressIndicator()));
         }
 
