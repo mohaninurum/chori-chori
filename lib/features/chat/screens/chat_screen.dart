@@ -270,10 +270,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                 ),
                 InkWell(
                   onTap: () {
-                    Clipboard.setData(ClipboardData(text: room.id));
+                    Clipboard.setData(ClipboardData(text: room.name));
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(
-                        content: Text('Room ID "${room.id}" copied to clipboard!'),
+                        content: Text('Room Name "${room.name}" copied to clipboard!'),
                         duration: const Duration(seconds: 2),
                       ),
                     );
@@ -281,7 +281,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Text('ID: ${room.id}', style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary, fontWeight: FontWeight.bold)),
+                      Text('Room: ${room.name}', style: const TextStyle(fontSize: 12, color: AppTheme.secondaryNeon)),
                       const SizedBox(width: 4),
                       const Icon(Icons.copy, size: 12, color: AppTheme.secondaryNeon),
                     ],

@@ -84,11 +84,12 @@ class _RoomJoinScreenState extends ConsumerState<RoomJoinScreen> {
                 controller: _idController,
                 textCapitalization: TextCapitalization.none,
                 decoration: InputDecoration(
-                  labelText: 'Room ID or Room Name',
-                  hintText: 'Enter 6-character code (e.g. 7X9K2P)',
+                  labelText: 'Room Name',
+                  hintText: 'Enter room name to join (e.g. SecretNest)',
+                  helperText: 'Enter the exact Room Name created by your partner',
                   border: const OutlineInputBorder(),
                   prefixIcon: const Icon(
-                    Icons.vpn_key,
+                    Icons.meeting_room,
                     color: AppTheme.secondaryNeon,
                   ),
                   suffixIcon: IconButton(
@@ -98,7 +99,7 @@ class _RoomJoinScreenState extends ConsumerState<RoomJoinScreen> {
                       final data = await Clipboard.getData(Clipboard.kTextPlain);
                       if (data?.text != null) {
                         setState(() {
-                          _idController.text = data!.text!.trim().toUpperCase();
+                          _idController.text = data!.text!.trim();
                         });
                       }
                     },

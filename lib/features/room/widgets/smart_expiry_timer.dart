@@ -60,8 +60,12 @@ class _SmartExpiryTimerState extends State<SmartExpiryTimer> {
       return const Text('Expired', style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold));
     }
 
-    final minutes = _remainingTime.inMinutes.toString().padLeft(2, '0');
+    final hours = _remainingTime.inHours;
+    final minutes = (_remainingTime.inMinutes % 60).toString().padLeft(2, '0');
     final seconds = (_remainingTime.inSeconds % 60).toString().padLeft(2, '0');
+    final timeStr = hours > 0
+        ? '${hours.toString().padLeft(2, '0')}:$minutes:$seconds'
+        : '$minutes:$seconds';
     final isWarning = _remainingTime.inMinutes < 5; // Highlight red when < 5 mins left
 
     return Container(
@@ -77,7 +81,7 @@ class _SmartExpiryTimerState extends State<SmartExpiryTimer> {
           Icon(Icons.timer, size: 16, color: isWarning ? Colors.redAccent : AppTheme.secondaryNeon),
           const SizedBox(width: 8),
           Text(
-            '$minutes:$seconds',
+            timeStr,
             style: TextStyle(
               color: isWarning ? Colors.redAccent : AppTheme.secondaryNeon,
               fontWeight: FontWeight.bold,

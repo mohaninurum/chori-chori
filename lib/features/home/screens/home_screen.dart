@@ -1,10 +1,26 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/router/routes.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../room/providers/room_provider.dart';
 
-class HomeScreen extends StatelessWidget {
+class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
+
+  @override
+  ConsumerState<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends ConsumerState<HomeScreen> {
+  @override
+  void initState() {
+    super.initState();
+    // App launch / home screen aate hi background me check karke expired rooms delete karega
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.read(roomRepositoryProvider).cleanExpiredRooms();
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -39,27 +55,24 @@ class HomeScreen extends StatelessWidget {
               const SizedBox(height: 80),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 40.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    ElevatedButton.icon(
-                      icon: const Icon(Icons.add),
-                      label: const Text('Create New Room'),
-                      onPressed: () => context.push(Routes.roomCreate),
+                children: [
+                  ElevatedButton.icon(
+                    icon: const Icon(Icons.add),
+                    label: const Text('Create New Room'),
+                    onPressed: () => context.push(Routes.roomCreate),
+                  ),
+                  const SizedBox(height: 20),
+                  OutlinedButton.icon(
+                    icon: const Icon(Icons.login, color: AppTheme.secondaryNeon),
+                    label: const Text('Join Existing Room', style: TextStyle(color: AppTheme.secondaryNeon)),
+                    style: OutlinedButton.styleFrom(
+                      side: const BorderSide(color: AppTheme.secondaryNeon),
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                     ),
-                    const SizedBox(height: 20),
-                    OutlinedButton.icon(
-                      icon: const Icon(Icons.login, color: AppTheme.secondaryNeon),
-                      label: const Text('Join Existing Room', style: TextStyle(color: AppTheme.secondaryNeon)),
-                      style: OutlinedButton.styleFrom(
-                        side: const BorderSide(color: AppTheme.secondaryNeon),
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                      ),
-                      onPressed: () => context.push(Routes.roomJoin),
-                    ),
-                  ],
-                ),
+                    onPressed: () => context.push(Routes.roomJoin),
+                  ),
+                ],
               ),
             ],
           ),
