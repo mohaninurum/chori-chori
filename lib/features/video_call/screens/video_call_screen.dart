@@ -20,7 +20,7 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
   final RTCVideoRenderer _localRenderer = RTCVideoRenderer();
   final RTCVideoRenderer _remoteRenderer = RTCVideoRenderer();
 
-  bool _isMicMuted = false;
+  bool _isMicMuted = true;
   bool _isVideoMuted = false;
   bool _isConnecting = true;
   String _statusText = 'Initializing camera & audio...';
@@ -128,6 +128,9 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
       }
       return;
     }
+
+    // Default to mic muted on call start / join
+    webrtcRepo.toggleAudio(false);
 
     if (mounted) {
       setState(() => _statusText = 'Connecting to safe room...');

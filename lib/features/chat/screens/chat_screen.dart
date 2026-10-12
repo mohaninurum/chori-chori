@@ -776,9 +776,14 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                         itemCount: messages.length,
                         itemBuilder: (context, index) {
                           final msg = messages[index];
+                          final isMe = msg.senderId == currentUserId ||
+                              (currentDeviceUserId.isNotEmpty && msg.senderId == currentDeviceUserId) ||
+                              (FirebaseAuth.instance.currentUser?.uid != null &&
+                                  msg.senderId == FirebaseAuth.instance.currentUser!.uid);
                           return MessageBubble(
+                            key: ValueKey(msg.id),
                             message: msg,
-                            isMe: msg.senderId == currentUserId,
+                            isMe: isMe,
                             roomId: room.id,
                           );
                         },

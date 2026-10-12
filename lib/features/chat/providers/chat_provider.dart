@@ -50,13 +50,18 @@ class ChatRepository implements BaseChatRepository {
 
   @override
   Future<void> deleteMessage(String roomId, String messageId) async {
-    final cleanRoomId = roomId.trim().toUpperCase();
-    await _firestore
-        .collection('rooms')
-        .doc(cleanRoomId)
-        .collection('messages')
-        .doc(messageId)
-        .delete();
+    try {
+      final cleanRoomId = roomId.trim().toUpperCase();
+      await _firestore
+          .collection('rooms')
+          .doc(cleanRoomId)
+          .collection('messages')
+          .doc(messageId)
+          .delete();
+    } catch (e) {
+      // Message might already be deleted by partner's countdown
+      debugPrint('Self-destruct delete message exception: $e');
+    }
   }
 }
 

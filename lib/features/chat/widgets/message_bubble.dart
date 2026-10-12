@@ -39,38 +39,54 @@ class _MessageBubbleState extends ConsumerState<MessageBubble> {
     _initSelfDestruct();
   }
 
-  void _initSelfDestruct() {
-    if (widget.message.expiresInSeconds > 0) {
-      final elapsed = DateTime.now().difference(widget.message.createdAt).inSeconds;
-      final remaining = widget.message.expiresInSeconds - elapsed;
+  @override
+  void didUpdateWidget(covariant MessageBubble oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.message.id != widget.message.id) {
+      _countdownTimer?.cancel();
+      _concealTimer?.cancel();
+      _isDeleting = false;
+      _opacity = 1.0;
+      _isRevealed = !widget.message.isSecret;
+      _initSelfDestruct();
+    }
+  }
 
-      if (remaining <= 0) {
-        // Expired already
-        _remainingSeconds = 0;
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          _triggerDestruction();
+  void _initSelfDestruct() {
+    if (widget.message.expiresInSeconds <= 0) return;
+
+    // For secret messages, countdown only starts once tapped/revealed!
+    if (widget.message.isSecret && !_isRevealed) {
+      _remainingSeconds = widget.message.expiresInSeconds;
+      return;
+    }
+
+    _startCountdown();
+  }
+
+  void _startCountdown() {
+    if (_countdownTimer != null) return;
+    _countdownTimer?.cancel();
+
+    _remainingSeconds = widget.message.expiresInSeconds;
+
+    _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      if (_remainingSeconds > 1) {
+        setState(() {
+          _remainingSeconds--;
         });
       } else {
-        _remainingSeconds = remaining;
-        _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
-          if (!mounted) {
-            timer.cancel();
-            return;
-          }
-          if (_remainingSeconds > 1) {
-            setState(() {
-              _remainingSeconds--;
-            });
-          } else {
-            timer.cancel();
-            setState(() {
-              _remainingSeconds = 0;
-            });
-            _triggerDestruction();
-          }
+        timer.cancel();
+        setState(() {
+          _remainingSeconds = 0;
         });
+        _triggerDestruction();
       }
-    }
+    });
   }
 
   void _triggerDestruction() {
@@ -94,16 +110,21 @@ class _MessageBubbleState extends ConsumerState<MessageBubble> {
       _isRevealed = !_isRevealed;
     });
 
-    _concealTimer?.cancel();
-    if (_isRevealed && widget.message.expiresInSeconds == 0) {
-      // Auto re-conceal secret message after 6 seconds if no self-destruct timer
-      _concealTimer = Timer(const Duration(seconds: 6), () {
-        if (mounted) {
-          setState(() {
-            _isRevealed = false;
-          });
-        }
-      });
+    if (_isRevealed) {
+      // If message has self-destruct, start the countdown now that it is opened!
+      if (widget.message.expiresInSeconds > 0 && _countdownTimer == null) {
+        _startCountdown();
+      } else if (widget.message.expiresInSeconds == 0) {
+        // Auto re-conceal secret message after 6 seconds if no self-destruct timer
+        _concealTimer?.cancel();
+        _concealTimer = Timer(const Duration(seconds: 6), () {
+          if (mounted) {
+            setState(() {
+              _isRevealed = false;
+            });
+          }
+        });
+      }
     }
   }
 
@@ -306,11 +327,13 @@ class _MessageBubbleState extends ConsumerState<MessageBubble> {
                                 padding: const EdgeInsets.symmetric(
                                     horizontal: 6, vertical: 2),
                                 decoration: BoxDecoration(
-                                  color: _remainingSeconds <= 3
-                                      ? Colors.red.withOpacity(0.3)
-                                      : Colors.black26,
+                                  color: isMe
+                                      ? Colors.white24
+                                      : (_remainingSeconds <= 3
+                                          ? Colors.red.withOpacity(0.3)
+                                          : Colors.black26),
                                   borderRadius: BorderRadius.circular(8),
-                                  border: _remainingSeconds <= 3
+                                  border: (!isMe && _remainingSeconds <= 3)
                                       ? Border.all(color: Colors.redAccent, width: 1)
                                       : null,
                                 ),
@@ -320,9 +343,11 @@ class _MessageBubbleState extends ConsumerState<MessageBubble> {
                                     Icon(
                                       Icons.timer_outlined,
                                       size: 11,
-                                      color: _remainingSeconds <= 3
-                                          ? Colors.redAccent
-                                          : Colors.white70,
+                                      color: isMe
+                                          ? Colors.white
+                                          : (_remainingSeconds <= 3
+                                              ? Colors.redAccent
+                                              : Colors.white70),
                                     ),
                                     const SizedBox(width: 3),
                                     Text(
@@ -330,9 +355,11 @@ class _MessageBubbleState extends ConsumerState<MessageBubble> {
                                       style: TextStyle(
                                         fontSize: 10,
                                         fontWeight: FontWeight.bold,
-                                        color: _remainingSeconds <= 3
-                                          ? Colors.redAccent
-                                          : Colors.white70,
+                                        color: isMe
+                                            ? Colors.white
+                                            : (_remainingSeconds <= 3
+                                                ? Colors.redAccent
+                                                : Colors.white70),
                                       ),
                                     ),
                                   ],
