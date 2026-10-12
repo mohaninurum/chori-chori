@@ -13,16 +13,16 @@ class UserPresence {
     this.device,
   });
 
-  /// Check if user is actively online (within 2-3 minute window for heartbeat)
+  /// Check if user is actively online (resilient to clock skews between mobile devices)
   bool get isActive {
     if (!isOnline) return false;
-    final diff = DateTime.now().difference(lastSeen);
-    return diff.inMinutes < 3;
+    final diff = DateTime.now().difference(lastSeen).abs();
+    return diff.inMinutes < 10;
   }
 
   String get statusText {
     if (isActive) return 'Online';
-    final diff = DateTime.now().difference(lastSeen);
+    final diff = DateTime.now().difference(lastSeen).abs();
     if (diff.inMinutes < 1) return 'Just now';
     if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
     if (diff.inHours < 24) return '${diff.inHours}h ago';

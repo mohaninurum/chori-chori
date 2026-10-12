@@ -25,9 +25,10 @@ class ChatRepository implements BaseChatRepository {
 
   @override
   Future<void> sendMessage(String roomId, ChatMessage message) async {
+    final cleanRoomId = roomId.trim().toUpperCase();
     await _firestore
         .collection('rooms')
-        .doc(roomId)
+        .doc(cleanRoomId)
         .collection('messages')
         .doc(message.id)
         .set(message.toMap());
@@ -35,9 +36,10 @@ class ChatRepository implements BaseChatRepository {
 
   @override
   Stream<List<ChatMessage>> watchMessages(String roomId) {
+    final cleanRoomId = roomId.trim().toUpperCase();
     return _firestore
         .collection('rooms')
-        .doc(roomId)
+        .doc(cleanRoomId)
         .collection('messages')
         .orderBy('createdAt', descending: true)
         .snapshots()
@@ -48,9 +50,10 @@ class ChatRepository implements BaseChatRepository {
 
   @override
   Future<void> deleteMessage(String roomId, String messageId) async {
+    final cleanRoomId = roomId.trim().toUpperCase();
     await _firestore
         .collection('rooms')
-        .doc(roomId)
+        .doc(cleanRoomId)
         .collection('messages')
         .doc(messageId)
         .delete();
@@ -63,21 +66,24 @@ class MockChatRepository implements BaseChatRepository {
 
   @override
   Future<void> sendMessage(String roomId, ChatMessage message) async {
-    _roomMessages.putIfAbsent(roomId, () => []);
-    _roomMessages[roomId]!.insert(0, message);
-    _controller.add(List.from(_roomMessages[roomId]!));
+    final cleanRoomId = roomId.trim().toUpperCase();
+    _roomMessages.putIfAbsent(cleanRoomId, () => []);
+    _roomMessages[cleanRoomId]!.insert(0, message);
+    _controller.add(List.from(_roomMessages[cleanRoomId]!));
   }
 
   @override
   Stream<List<ChatMessage>> watchMessages(String roomId) async* {
-    yield _roomMessages[roomId] ?? [];
+    final cleanRoomId = roomId.trim().toUpperCase();
+    yield _roomMessages[cleanRoomId] ?? [];
     yield* _controller.stream;
   }
 
   @override
   Future<void> deleteMessage(String roomId, String messageId) async {
-    _roomMessages[roomId]?.removeWhere((m) => m.id == messageId);
-    _controller.add(List.from(_roomMessages[roomId] ?? []));
+    final cleanRoomId = roomId.trim().toUpperCase();
+    _roomMessages[cleanRoomId]?.removeWhere((m) => m.id == messageId);
+    _controller.add(List.from(_roomMessages[cleanRoomId] ?? []));
   }
 }
 

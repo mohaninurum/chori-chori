@@ -22,96 +22,305 @@ class MessageBubble extends ConsumerStatefulWidget {
 }
 
 class _MessageBubbleState extends ConsumerState<MessageBubble> {
-  bool _isHidden = false;
-  Timer? _destructTimer;
+  bool _isRevealed = false;
+  int _remainingSeconds = 0;
+  Timer? _countdownTimer;
+  Timer? _concealTimer;
   double _opacity = 1.0;
+  bool _isDeleting = false;
 
   @override
   void initState() {
     super.initState();
-    _isHidden = widget.message.isSecret;
-    _setupSelfDestruct();
+    // Non-secret messages are revealed by default. Secret messages start concealed.
+    _isRevealed = !widget.message.isSecret;
+    _initSelfDestruct();
   }
 
-  void _setupSelfDestruct() {
+  void _initSelfDestruct() {
     if (widget.message.expiresInSeconds > 0) {
-      final expireTime = widget.message.createdAt.add(Duration(seconds: widget.message.expiresInSeconds));
-      final now = DateTime.now();
-      final diff = expireTime.difference(now);
+      final elapsed = DateTime.now().difference(widget.message.createdAt).inSeconds;
+      final remaining = widget.message.expiresInSeconds - elapsed;
 
-      if (diff.isNegative) {
-        // Already expired
-        _deleteSelf();
+      if (remaining <= 0) {
+        // Expired already
+        _remainingSeconds = 0;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _triggerDestruction();
+        });
       } else {
-        _destructTimer = Timer(diff, () {
-          if (mounted) {
+        _remainingSeconds = remaining;
+        _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+          if (!mounted) {
+            timer.cancel();
+            return;
+          }
+          if (_remainingSeconds > 1) {
             setState(() {
-              _opacity = 0.0;
+              _remainingSeconds--;
             });
-            // Give 500ms for fade out animation before deleting
-            Future.delayed(const Duration(milliseconds: 500), _deleteSelf);
+          } else {
+            timer.cancel();
+            setState(() {
+              _remainingSeconds = 0;
+            });
+            _triggerDestruction();
           }
         });
       }
     }
   }
 
-  void _deleteSelf() {
-    if (mounted) {
-      ref.read(chatRepositoryProvider).deleteMessage(widget.roomId, widget.message.id);
+  void _triggerDestruction() {
+    if (_isDeleting || !mounted) return;
+    _isDeleting = true;
+    setState(() {
+      _opacity = 0.0;
+    });
+
+    Future.delayed(const Duration(milliseconds: 350), () {
+      if (mounted) {
+        ref.read(chatRepositoryProvider).deleteMessage(widget.roomId, widget.message.id);
+      }
+    });
+  }
+
+  void _toggleSecretReveal() {
+    if (!widget.message.isSecret) return;
+
+    setState(() {
+      _isRevealed = !_isRevealed;
+    });
+
+    _concealTimer?.cancel();
+    if (_isRevealed && widget.message.expiresInSeconds == 0) {
+      // Auto re-conceal secret message after 6 seconds if no self-destruct timer
+      _concealTimer = Timer(const Duration(seconds: 6), () {
+        if (mounted) {
+          setState(() {
+            _isRevealed = false;
+          });
+        }
+      });
     }
   }
 
   @override
   void dispose() {
-    _destructTimer?.cancel();
+    _countdownTimer?.cancel();
+    _concealTimer?.cancel();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    final isMe = widget.isMe;
+    final hasSelfDestruct = widget.message.expiresInSeconds > 0;
+    final isSecret = widget.message.isSecret;
+
     return AnimatedOpacity(
-      duration: const Duration(milliseconds: 500),
+      duration: const Duration(milliseconds: 350),
       opacity: _opacity,
-      child: Align(
-        alignment: widget.isMe ? Alignment.centerRight : Alignment.centerLeft,
-        child: GestureDetector(
-          onTap: () {
-            if (_isHidden && widget.message.isSecret) {
-              setState(() {
-                _isHidden = false;
-              });
-              // Optionally re-hide after a few seconds
-              Future.delayed(const Duration(seconds: 3), () {
-                if (mounted) setState(() => _isHidden = true);
-              });
-            }
-          },
-          child: Container(
-            margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
-            padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 16),
-            decoration: BoxDecoration(
-              color: widget.isMe ? AppTheme.primaryNeon : AppTheme.backgroundLight,
-              borderRadius: BorderRadius.only(
-                topLeft: const Radius.circular(16),
-                topRight: const Radius.circular(16),
-                bottomLeft: Radius.circular(widget.isMe ? 16 : 0),
-                bottomRight: Radius.circular(widget.isMe ? 0 : 16),
-              ),
-              border: Border.all(
-                color: widget.isMe ? AppTheme.primaryNeon : AppTheme.secondaryNeon,
-                width: widget.message.isSecret ? 2 : 0,
-              ),
-              boxShadow: widget.isMe
-                  ? [BoxShadow(color: AppTheme.primaryNeon.withOpacity(0.5), blurRadius: 8, spreadRadius: 1)]
-                  : [],
+      child: Container(
+        margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 10),
+        child: Align(
+          // Sender is on RIGHT, Receiver is on LEFT
+          alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxWidth: MediaQuery.of(context).size.width * 0.78,
             ),
-            child: _isHidden
-                ? const Icon(Icons.visibility_off, color: Colors.white54, size: 20)
-                : Text(
-                    widget.message.text,
-                    style: const TextStyle(color: Colors.white, fontSize: 16),
+            child: GestureDetector(
+              onTap: isSecret ? _toggleSecretReveal : null,
+              child: Container(
+                padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 14),
+                decoration: BoxDecoration(
+                  gradient: isMe
+                      ? const LinearGradient(
+                          colors: [Color(0xFFFF2A5F), Color(0xFFFF527B)],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        )
+                      : null,
+                  color: isMe ? null : const Color(0xFF1E1E2C),
+                  borderRadius: BorderRadius.only(
+                    topLeft: const Radius.circular(18),
+                    topRight: const Radius.circular(18),
+                    bottomLeft: Radius.circular(isMe ? 18 : 4),
+                    bottomRight: Radius.circular(isMe ? 4 : 18),
                   ),
+                  border: Border.all(
+                    color: isMe
+                        ? const Color(0xFFFF527B)
+                        : (isSecret ? AppTheme.secondaryNeon : const Color(0xFF2C2C3E)),
+                    width: isSecret ? 1.5 : 1.0,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: isMe
+                          ? const Color(0xFFFF2A5F).withOpacity(0.3)
+                          : Colors.black.withOpacity(0.2),
+                      blurRadius: 8,
+                      offset: const Offset(0, 3),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  crossAxisAlignment:
+                      isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Partner label on received messages
+                    if (!isMe)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 4.0),
+                        child: Text(
+                          'Partner',
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 0.5,
+                            color: AppTheme.secondaryNeon.withOpacity(0.8),
+                          ),
+                        ),
+                      ),
+
+                    // Message Content (Secret concealed or revealed)
+                    if (isSecret && !_isRevealed)
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.lock_outline_rounded,
+                            color: isMe ? Colors.white : AppTheme.secondaryNeon,
+                            size: 18,
+                          ),
+                          const SizedBox(width: 8),
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Secret Message',
+                                style: TextStyle(
+                                  color: isMe ? Colors.white : Colors.white,
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 13,
+                                ),
+                              ),
+                              Text(
+                                'Tap to reveal',
+                                style: TextStyle(
+                                  color: isMe ? Colors.white70 : Colors.white54,
+                                  fontSize: 11,
+                                  fontStyle: FontStyle.italic,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      )
+                    else
+                      Column(
+                        crossAxisAlignment:
+                            isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            widget.message.text,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 15,
+                              height: 1.3,
+                            ),
+                          ),
+                          if (isSecret)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 4.0),
+                              child: Text(
+                                '(Tap to hide)',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  color: isMe ? Colors.white70 : Colors.white54,
+                                  fontStyle: FontStyle.italic,
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+
+                    // Badges row: Secret indicator & Self-destruct countdown
+                    if (isSecret || hasSelfDestruct)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 6.0),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (isSecret)
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 6, vertical: 2),
+                                margin: const EdgeInsets.only(right: 6),
+                                decoration: BoxDecoration(
+                                  color: Colors.black26,
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: const Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(Icons.visibility_off,
+                                        size: 11, color: Colors.amberAccent),
+                                    SizedBox(width: 3),
+                                    Text(
+                                      'Secret',
+                                      style: TextStyle(
+                                          fontSize: 10, color: Colors.amberAccent),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            if (hasSelfDestruct)
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 6, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: _remainingSeconds <= 3
+                                      ? Colors.red.withOpacity(0.3)
+                                      : Colors.black26,
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: _remainingSeconds <= 3
+                                      ? Border.all(color: Colors.redAccent, width: 1)
+                                      : null,
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      Icons.timer_outlined,
+                                      size: 11,
+                                      color: _remainingSeconds <= 3
+                                          ? Colors.redAccent
+                                          : Colors.white70,
+                                    ),
+                                    const SizedBox(width: 3),
+                                    Text(
+                                      '${_remainingSeconds}s',
+                                      style: TextStyle(
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.bold,
+                                        color: _remainingSeconds <= 3
+                                          ? Colors.redAccent
+                                          : Colors.white70,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
           ),
         ),
       ),

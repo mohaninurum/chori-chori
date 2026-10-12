@@ -6,7 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import '../../room/providers/room_provider.dart';
 
-enum CallStatus { idle, calling, connected, ended, error }
+enum CallStatus { idle, calling, connected, ended, rejected, error }
 
 class WebRTCRepository {
   final FirebaseFirestore? _firestore;
@@ -100,7 +100,8 @@ class WebRTCRepository {
   }
 
   Future<void> startOrJoinCall(String roomId, String userId) async {
-    _roomId = roomId;
+    final cleanRoomId = roomId.trim().toUpperCase();
+    _roomId = cleanRoomId;
     _userId = userId;
 
     if (_firestore == null) {
@@ -109,7 +110,7 @@ class WebRTCRepository {
     }
 
     try {
-      final sessionRef = _firestore.collection('rooms').doc(roomId).collection('call').doc('session');
+      final sessionRef = _firestore.collection('rooms').doc(cleanRoomId).collection('call').doc('session');
       final snapshot = await sessionRef.get();
       final data = snapshot.data();
 
@@ -162,6 +163,8 @@ class WebRTCRepository {
           await _peerConnection?.setRemoteDescription(answer);
           _setStatus(CallStatus.connected);
         }
+      } else if (data != null && data['status'] == 'rejected') {
+        _setStatus(CallStatus.rejected);
       } else if (data != null && data['status'] == 'ended') {
         _setStatus(CallStatus.ended);
       }
@@ -219,7 +222,9 @@ class WebRTCRepository {
     _sessionSubscription?.cancel();
     _sessionSubscription = sessionRef.snapshots().listen((snapshot) {
       final sessionData = snapshot.data() as Map<String, dynamic>?;
-      if (sessionData != null && sessionData['status'] == 'ended') {
+      if (sessionData != null && sessionData['status'] == 'rejected') {
+        _setStatus(CallStatus.rejected);
+      } else if (sessionData != null && sessionData['status'] == 'ended') {
         _setStatus(CallStatus.ended);
       }
     });
@@ -247,15 +252,38 @@ class WebRTCRepository {
     }
   }
 
-  Future<void> endCall(String? roomId) async {
+  Future<void> rejectCall(String? roomId) async {
     if (roomId != null && _firestore != null) {
+      final cleanRoomId = roomId.trim().toUpperCase();
       try {
         await _firestore
             .collection('rooms')
-            .doc(roomId)
+            .doc(cleanRoomId)
             .collection('call')
             .doc('session')
-            .set({'status': 'ended'}, SetOptions(merge: true));
+            .set({
+              'status': 'rejected',
+              'endedAt': FieldValue.serverTimestamp(),
+            }, SetOptions(merge: true));
+      } catch (e) {
+        debugPrint('Error rejecting call in Firestore: $e');
+      }
+    }
+  }
+
+  Future<void> endCall(String? roomId) async {
+    if (roomId != null && _firestore != null) {
+      final cleanRoomId = roomId.trim().toUpperCase();
+      try {
+        await _firestore
+            .collection('rooms')
+            .doc(cleanRoomId)
+            .collection('call')
+            .doc('session')
+            .set({
+              'status': 'ended',
+              'endedAt': FieldValue.serverTimestamp(),
+            }, SetOptions(merge: true));
       } catch (e) {
         debugPrint('Error setting call ended in Firestore: $e');
       }

@@ -31,6 +31,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
   bool _isSecretMode = false;
   int _expiresInSeconds = 0;
   Timer? _heartbeatTimer;
+  bool _isCallDialogShowing = false;
 
   @override
   void initState() {
@@ -44,18 +45,17 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
   }
 
   void _startHeartbeat() {
-    _heartbeatTimer = Timer.periodic(const Duration(seconds: 45), (_) {
+    _heartbeatTimer = Timer.periodic(const Duration(seconds: 20), (_) {
       _setPresence(true);
     });
   }
 
   void _setPresence(bool isOnline) {
     final room = ref.read(currentRoomProvider).value;
-    final user = ref.read(authStateChangesProvider).value ?? FirebaseAuth.instance.currentUser;
+    final userId = ref.read(userIdProvider);
     final roomId = room?.id;
-    final userId = user?.uid ?? 'guest_user';
 
-    if (roomId != null) {
+    if (roomId != null && userId.isNotEmpty) {
       ref.read(presenceRepositoryProvider).updatePresence(
             roomId,
             userId,
@@ -92,6 +92,96 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     _setPresence(false);
     _messageController.dispose();
     super.dispose();
+  }
+
+  void _showIncomingCallDialog(String roomId) {
+    if (_isCallDialogShowing || !mounted) return;
+    _isCallDialogShowing = true;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1E1E2C),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(24),
+          side: const BorderSide(color: Color(0xFF00FF88), width: 1.5),
+        ),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: const Color(0xFF00FF88).withOpacity(0.15),
+              ),
+              child: const Icon(Icons.videocam, color: Color(0xFF00FF88), size: 28),
+            ),
+            const SizedBox(width: 12),
+            const Expanded(
+              child: Text(
+                'Incoming Video Call',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ],
+        ),
+        content: const Text(
+          'Your partner is requesting a video call in this room.\n\n'
+          '• Accept: Join video call immediately\n'
+          '• Reject: Decline call and continue chatting',
+          style: TextStyle(color: Colors.white70, fontSize: 13, height: 1.4),
+        ),
+        actionsPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        actions: [
+          OutlinedButton.icon(
+            style: OutlinedButton.styleFrom(
+              side: const BorderSide(color: Colors.redAccent),
+              foregroundColor: Colors.redAccent,
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            icon: const Icon(Icons.call_end, size: 16),
+            label: const Text('Reject Call', style: TextStyle(fontWeight: FontWeight.bold)),
+            onPressed: () async {
+              Navigator.of(ctx).pop();
+              _isCallDialogShowing = false;
+              await ref.read(webRTCProvider).rejectCall(roomId);
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Video call rejected. Chat continues.'),
+                    duration: Duration(seconds: 2),
+                    backgroundColor: Colors.white24,
+                  ),
+                );
+              }
+            },
+          ),
+          ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF00FF88),
+              foregroundColor: Colors.black87,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            icon: const Icon(Icons.videocam, size: 18),
+            label: const Text('Accept Call', style: TextStyle(fontWeight: FontWeight.bold)),
+            onPressed: () {
+              Navigator.of(ctx).pop();
+              _isCallDialogShowing = false;
+              context.push(Routes.videoCall);
+            },
+          ),
+        ],
+      ),
+    ).then((_) {
+      _isCallDialogShowing = false;
+    });
   }
 
   void _confirmCloseRoom() {
@@ -188,11 +278,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     if (_messageController.text.trim().isEmpty) return;
 
     final roomState = ref.read(currentRoomProvider);
-    final user = ref.read(authStateChangesProvider).value ?? FirebaseAuth.instance.currentUser;
+    final userId = ref.read(userIdProvider);
     final roomId = roomState.value?.id;
-    final userId = user?.uid ?? 'guest_user';
 
-    if (roomId != null) {
+    if (roomId != null && userId.isNotEmpty) {
       final message = ChatMessage(
         id: const Uuid().v4(),
         senderId: userId,
@@ -221,7 +310,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
       );
     }
 
-    final currentUserId = user?.uid ?? 'guest_user';
+    final currentUserId = ref.watch(userIdProvider);
 
     final liveRoomAsync = ref.watch(roomRepositoryProvider).watchRoom(room.id);
     final messagesAsync = ref.watch(messagesStreamProvider(room.id));
@@ -235,6 +324,29 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     final isIncomingCall = callData != null &&
         callData['status'] == 'calling' &&
         callData['callerId'] != currentUserId;
+
+    ref.listen<AsyncValue<Map<String, dynamic>?>>(
+      callSessionStreamProvider(room.id),
+      (previous, next) {
+        final data = next.value;
+        final isCalling = data != null &&
+            data['status'] == 'calling' &&
+            data['callerId'] != currentUserId;
+
+        if (isCalling && !_isCallDialogShowing) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted && !_isCallDialogShowing) {
+              _showIncomingCallDialog(room.id);
+            }
+          });
+        } else if (!isCalling && _isCallDialogShowing) {
+          if (mounted && Navigator.of(context, rootNavigator: true).canPop()) {
+            Navigator.of(context, rootNavigator: true).pop();
+            _isCallDialogShowing = false;
+          }
+        }
+      },
+    );
 
     return StreamBuilder(
       stream: liveRoomAsync,
@@ -381,6 +493,14 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                             ],
                           ),
                         ),
+                        IconButton(
+                          icon: const Icon(Icons.call_end, color: Colors.redAccent, size: 20),
+                          tooltip: 'Reject Call',
+                          onPressed: () async {
+                            await ref.read(webRTCProvider).rejectCall(room.id);
+                          },
+                        ),
+                        const SizedBox(width: 4),
                         ElevatedButton.icon(
                           style: ElevatedButton.styleFrom(
                             backgroundColor: const Color(0xFF00FF88),
@@ -388,7 +508,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                           ),
                           icon: const Icon(Icons.call, size: 16),
-                          label: const Text('Join', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                          label: const Text('Accept', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
                           onPressed: () => context.push(Routes.videoCall),
                         ),
                       ],

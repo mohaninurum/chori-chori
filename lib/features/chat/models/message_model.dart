@@ -17,7 +17,7 @@ class ChatMessage {
     required this.text,
     required this.type,
     required this.createdAt,
-    this.expiresInSeconds = 0, // 0 means it expires with the room
+    this.expiresInSeconds = 0,
     this.isSecret = false,
   });
 
@@ -34,14 +34,28 @@ class ChatMessage {
   }
 
   factory ChatMessage.fromMap(Map<String, dynamic> map, String documentId) {
+    DateTime parseDate(dynamic val) {
+      if (val is Timestamp) return val.toDate();
+      if (val is DateTime) return val;
+      if (val is int) return DateTime.fromMillisecondsSinceEpoch(val);
+      if (val is String) {
+        final d = DateTime.tryParse(val);
+        if (d != null) return d;
+      }
+      return DateTime.now();
+    }
+
     return ChatMessage(
       id: documentId,
-      senderId: map['senderId'] ?? '',
-      text: map['text'] ?? '',
-      type: MessageType.values.firstWhere((e) => e.name == map['type'], orElse: () => MessageType.text),
-      createdAt: (map['createdAt'] as Timestamp).toDate(),
-      expiresInSeconds: map['expiresInSeconds'] ?? 0,
-      isSecret: map['isSecret'] ?? false,
+      senderId: map['senderId']?.toString() ?? '',
+      text: map['text']?.toString() ?? '',
+      type: MessageType.values.firstWhere(
+        (e) => e.name == map['type'],
+        orElse: () => MessageType.text,
+      ),
+      createdAt: parseDate(map['createdAt']),
+      expiresInSeconds: (map['expiresInSeconds'] as num?)?.toInt() ?? 0,
+      isSecret: map['isSecret'] as bool? ?? false,
     );
   }
 }

@@ -37,9 +37,8 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
 
     final webrtcRepo = ref.read(webRTCProvider);
     final roomState = ref.read(currentRoomProvider);
-    final user = ref.read(authStateChangesProvider).value ?? FirebaseAuth.instance.currentUser;
+    final userId = ref.read(userIdProvider);
     final roomId = roomState.value?.id;
-    final userId = user?.uid ?? 'guest_user';
 
     if (roomId == null) {
       if (mounted) context.pop();
@@ -75,6 +74,17 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
           case CallStatus.connected:
             _statusText = 'Connected';
             _isConnecting = false;
+            break;
+          case CallStatus.rejected:
+            _statusText = 'Call declined by partner';
+            _isConnecting = false;
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Video call was declined by partner.'),
+                backgroundColor: Colors.orangeAccent,
+              ),
+            );
+            context.pop();
             break;
           case CallStatus.ended:
             _statusText = 'Call ended';

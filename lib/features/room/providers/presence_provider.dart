@@ -18,18 +18,19 @@ class FirestorePresenceRepository implements BasePresenceRepository {
   FirestorePresenceRepository(this._firestore);
 
   CollectionReference _presenceCollection(String roomId) {
-    return _firestore.collection('rooms').doc(roomId).collection('presence');
+    return _firestore.collection('rooms').doc(roomId.trim().toUpperCase()).collection('presence');
   }
 
   @override
   Future<void> updatePresence(String roomId, String userId, {required bool isOnline}) async {
     try {
+      final cleanRoomId = roomId.trim().toUpperCase();
       final presence = UserPresence(
         userId: userId,
         isOnline: isOnline,
         lastSeen: DateTime.now(),
       );
-      await _presenceCollection(roomId)
+      await _presenceCollection(cleanRoomId)
           .doc(userId)
           .set(presence.toMap(), SetOptions(merge: true));
     } catch (e, st) {
@@ -39,22 +40,47 @@ class FirestorePresenceRepository implements BasePresenceRepository {
 
   @override
   Stream<UserPresence?> watchPartnerPresence(String roomId, String currentUserId) {
-    return _presenceCollection(roomId).snapshots().map((snapshot) {
+    final cleanRoomId = roomId.trim().toUpperCase();
+    return _presenceCollection(cleanRoomId).snapshots().map((snapshot) {
+      final candidates = <UserPresence>[];
       for (final doc in snapshot.docs) {
-        if (doc.id != currentUserId) {
+        if (doc.id != currentUserId && doc.id != 'guest_user') {
           final data = doc.data() as Map<String, dynamic>?;
           if (data != null) {
-            return UserPresence.fromMap(data, doc.id);
+            candidates.add(UserPresence.fromMap(data, doc.id));
           }
         }
       }
-      return null;
+
+      // Fallback if only guest_user document exists from another device
+      if (candidates.isEmpty && currentUserId != 'guest_user') {
+        for (final doc in snapshot.docs) {
+          if (doc.id == 'guest_user') {
+            final data = doc.data() as Map<String, dynamic>?;
+            if (data != null) {
+              candidates.add(UserPresence.fromMap(data, doc.id));
+            }
+          }
+        }
+      }
+
+      if (candidates.isEmpty) return null;
+
+      // Prioritize actively online partner, then most recently active
+      candidates.sort((a, b) {
+        if (a.isActive && !b.isActive) return -1;
+        if (!a.isActive && b.isActive) return 1;
+        return b.lastSeen.compareTo(a.lastSeen);
+      });
+
+      return candidates.first;
     });
   }
 
   @override
   Stream<List<UserPresence>> watchAllPresences(String roomId) {
-    return _presenceCollection(roomId).snapshots().map((snapshot) {
+    final cleanRoomId = roomId.trim().toUpperCase();
+    return _presenceCollection(cleanRoomId).snapshots().map((snapshot) {
       return snapshot.docs.map((doc) {
         return UserPresence.fromMap(doc.data() as Map<String, dynamic>, doc.id);
       }).toList();
@@ -68,8 +94,9 @@ class MockPresenceRepository implements BasePresenceRepository {
 
   @override
   Future<void> updatePresence(String roomId, String userId, {required bool isOnline}) async {
-    _presenceStore.putIfAbsent(roomId, () => {});
-    _presenceStore[roomId]![userId] = UserPresence(
+    final cleanRoomId = roomId.trim().toUpperCase();
+    _presenceStore.putIfAbsent(cleanRoomId, () => {});
+    _presenceStore[cleanRoomId]![userId] = UserPresence(
       userId: userId,
       isOnline: isOnline,
       lastSeen: DateTime.now(),
@@ -86,14 +113,27 @@ class MockPresenceRepository implements BasePresenceRepository {
   }
 
   UserPresence? _getPartner(String roomId, String currentUserId) {
-    final roomMap = _presenceStore[roomId];
+    final cleanRoomId = roomId.trim().toUpperCase();
+    final roomMap = _presenceStore[cleanRoomId];
     if (roomMap == null) return null;
+    final candidates = <UserPresence>[];
     for (final entry in roomMap.entries) {
-      if (entry.key != currentUserId) {
-        return entry.value;
+      if (entry.key != currentUserId && entry.key != 'guest_user') {
+        candidates.add(entry.value);
       }
     }
-    return null;
+    if (candidates.isEmpty && currentUserId != 'guest_user') {
+      if (roomMap.containsKey('guest_user')) {
+        candidates.add(roomMap['guest_user']!);
+      }
+    }
+    if (candidates.isEmpty) return null;
+    candidates.sort((a, b) {
+      if (a.isActive && !b.isActive) return -1;
+      if (!a.isActive && b.isActive) return 1;
+      return b.lastSeen.compareTo(a.lastSeen);
+    });
+    return candidates.first;
   }
 
   @override
