@@ -4,6 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/message_model.dart';
 import '../providers/chat_provider.dart';
 import '../../../core/theme/app_theme.dart';
+import 'image_message_view.dart';
+import 'voice_message_player.dart';
 
 class MessageBubble extends ConsumerStatefulWidget {
   final ChatMessage message;
@@ -191,18 +193,26 @@ class _MessageBubbleState extends ConsumerState<MessageBubble> {
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Icon(
-                            Icons.lock_outline_rounded,
+                            widget.message.type == MessageType.image
+                                ? Icons.photo_camera_back_outlined
+                                : (widget.message.type == MessageType.voice
+                                    ? Icons.mic_none_outlined
+                                    : Icons.lock_outline_rounded),
                             color: isMe ? Colors.white : AppTheme.secondaryNeon,
-                            size: 18,
+                            size: 20,
                           ),
                           const SizedBox(width: 8),
                           Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                'Secret Message',
-                                style: TextStyle(
-                                  color: isMe ? Colors.white : Colors.white,
+                                widget.message.type == MessageType.image
+                                    ? 'Secret Photo'
+                                    : (widget.message.type == MessageType.voice
+                                        ? 'Secret Voice Note'
+                                        : 'Secret Message'),
+                                style: const TextStyle(
+                                  color: Colors.white,
                                   fontWeight: FontWeight.w600,
                                   fontSize: 13,
                                 ),
@@ -218,6 +228,20 @@ class _MessageBubbleState extends ConsumerState<MessageBubble> {
                             ],
                           ),
                         ],
+                      )
+                    else if (widget.message.type == MessageType.image &&
+                        widget.message.mediaData != null)
+                      ImageMessageView(
+                        base64Image: widget.message.mediaData!,
+                        caption: widget.message.text.isNotEmpty ? widget.message.text : null,
+                        isMe: isMe,
+                      )
+                    else if (widget.message.type == MessageType.voice &&
+                        widget.message.mediaData != null)
+                      VoiceMessagePlayer(
+                        base64Audio: widget.message.mediaData!,
+                        durationSeconds: widget.message.durationSeconds ?? 1,
+                        isMe: isMe,
                       )
                     else
                       Column(
