@@ -156,6 +156,8 @@ class RoomRepository implements BaseRoomRepository {
     } catch (e) {
       debugPrint('Error deleting root room document: $e');
     }
+  }
+
   @override
   Future<void> saveActiveRoomLocally(String roomId, DateTime expiresAt) async {
     try {

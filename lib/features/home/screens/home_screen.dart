@@ -55,24 +55,27 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               const SizedBox(height: 80),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 40.0),
-                children: [
-                  ElevatedButton.icon(
-                    icon: const Icon(Icons.add),
-                    label: const Text('Create New Room'),
-                    onPressed: () => context.push(Routes.roomCreate),
-                  ),
-                  const SizedBox(height: 20),
-                  OutlinedButton.icon(
-                    icon: const Icon(Icons.login, color: AppTheme.secondaryNeon),
-                    label: const Text('Join Existing Room', style: TextStyle(color: AppTheme.secondaryNeon)),
-                    style: OutlinedButton.styleFrom(
-                      side: const BorderSide(color: AppTheme.secondaryNeon),
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    ElevatedButton.icon(
+                      icon: const Icon(Icons.add),
+                      label: const Text('Create New Room'),
+                      onPressed: () => context.push(Routes.roomCreate),
                     ),
-                    onPressed: () => context.push(Routes.roomJoin),
-                  ),
-                ],
+                    const SizedBox(height: 20),
+                    OutlinedButton.icon(
+                      icon: const Icon(Icons.login, color: AppTheme.secondaryNeon),
+                      label: const Text('Join Existing Room', style: TextStyle(color: AppTheme.secondaryNeon)),
+                      style: OutlinedButton.styleFrom(
+                        side: const BorderSide(color: AppTheme.secondaryNeon),
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                      ),
+                      onPressed: () => context.push(Routes.roomJoin),
+                    ),
+                  ],
+                ),
               ),
             ],
           ),
