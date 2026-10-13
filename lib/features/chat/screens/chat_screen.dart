@@ -9,6 +9,7 @@ import 'package:uuid/uuid.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../room/models/presence_model.dart';
+import '../../room/models/room_model.dart';
 import '../../room/providers/presence_provider.dart';
 import '../../room/providers/room_provider.dart';
 import '../../room/widgets/partner_presence_badge.dart';
@@ -648,7 +649,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
 
     final currentUserId = ref.watch(userIdProvider);
 
-    final liveRoomAsync = ref.watch(roomRepositoryProvider).watchRoom(room.id);
+    final liveRoomAsync = ref.watch(roomStreamProvider(room.id));
+    final liveRoom = liveRoomAsync.value ?? room;
     final messagesAsync = ref.watch(messagesStreamProvider(room.id));
     final partnerPresenceAsync = ref.watch(
       partnerPresenceProvider(
@@ -666,6 +668,17 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     final isIncomingAudioCall = audioCallData != null &&
         audioCallData['status'] == 'calling' &&
         audioCallData['callerId'] != currentUserId;
+
+    ref.listen<AsyncValue<Room?>>(
+      roomStreamProvider(room.id),
+      (previous, next) {
+        if (next.hasValue && next.value == null && !_isExitingRoom) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            _onRoomExpiredOrDeleted();
+          });
+        }
+      },
+    );
 
     ref.listen<AsyncValue<Map<String, dynamic>?>>(
       callSessionStreamProvider(room.id),
@@ -713,19 +726,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
       },
     );
 
-    return StreamBuilder(
-      stream: liveRoomAsync,
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.active && (!snapshot.hasData || snapshot.data == null)) {
-          if (!_isExitingRoom) {
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              _onRoomExpiredOrDeleted();
-            });
-          }
-          return const Scaffold(body: Center(child: CircularProgressIndicator()));
-        }
-
-        return Scaffold(
+    return Scaffold(
           appBar: AppBar(
             title: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -998,144 +999,152 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
             ),
           ),
         );
-      },
-    );
   }
 
   Widget _buildMessageInput() {
-    final hasText = _messageController.text.trim().isNotEmpty;
+    return StatefulBuilder(
+      builder: (context, setInputState) {
+        final hasText = _messageController.text.trim().isNotEmpty;
 
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      color: Colors.black26,
-      child: SafeArea(
-        child: Column(
-          children: [
-            Row(
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          color: Colors.black26,
+          child: SafeArea(
+            child: Column(
               children: [
-                const Text('Secret Mode', style: TextStyle(color: AppTheme.secondaryNeon, fontSize: 12)),
-                Switch(
-                  value: _isSecretMode,
-                  activeColor: AppTheme.secondaryNeon,
-                  onChanged: (val) => setState(() => _isSecretMode = val),
-                ),
-                const Spacer(),
-                const Text('Self-destruct: ', style: TextStyle(color: Colors.white54, fontSize: 12)),
-                DropdownButton<int>(
-                  value: _expiresInSeconds,
-                  dropdownColor: AppTheme.backgroundDark,
-                  style: const TextStyle(color: AppTheme.primaryNeon),
-                  items: const [
-                    DropdownMenuItem(value: 0, child: Text("Never")),
-                    DropdownMenuItem(value: 5, child: Text("5s")),
-                    DropdownMenuItem(value: 10, child: Text("10s")),
-                    DropdownMenuItem(value: 30, child: Text("30s")),
-                  ],
-                  onChanged: (val) => setState(() => _expiresInSeconds = val ?? 0),
-                ),
-              ],
-            ),
-
-            if (_isRecordingVoice)
-              Container(
-                margin: const EdgeInsets.symmetric(vertical: 4),
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [Color(0xFF2A0845), Color(0xFF1E1E2C)],
-                  ),
-                  borderRadius: BorderRadius.circular(24),
-                  border: Border.all(color: Colors.redAccent.withOpacity(0.6), width: 1.5),
-                ),
-                child: Row(
+                Row(
                   children: [
-                    Container(
-                      width: 12,
-                      height: 12,
-                      decoration: const BoxDecoration(
-                        color: Colors.redAccent,
-                        shape: BoxShape.circle,
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Text(
-                      'Recording... ${_formatDuration(_recordDurationSeconds)}',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 14,
-                      ),
+                    const Text('Secret Mode', style: TextStyle(color: AppTheme.secondaryNeon, fontSize: 12)),
+                    Switch(
+                      value: _isSecretMode,
+                      activeColor: AppTheme.secondaryNeon,
+                      onChanged: (val) {
+                        setInputState(() => _isSecretMode = val);
+                        _isSecretMode = val;
+                      },
                     ),
                     const Spacer(),
-                    IconButton(
-                      icon: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent, size: 24),
-                      tooltip: 'Cancel',
-                      onPressed: _cancelVoiceRecording,
-                    ),
-                    const SizedBox(width: 4),
-                    Container(
-                      decoration: const BoxDecoration(
-                        color: Color(0xFF00FF88),
-                        shape: BoxShape.circle,
-                      ),
-                      child: IconButton(
-                        icon: const Icon(Icons.send_rounded, color: Colors.black87, size: 20),
-                        tooltip: 'Send Voice Note',
-                        onPressed: _stopAndSendVoiceRecording,
-                      ),
+                    const Text('Self-destruct: ', style: TextStyle(color: Colors.white54, fontSize: 12)),
+                    DropdownButton<int>(
+                      value: _expiresInSeconds,
+                      dropdownColor: AppTheme.backgroundDark,
+                      style: const TextStyle(color: AppTheme.primaryNeon),
+                      items: const [
+                        DropdownMenuItem(value: 0, child: Text("Never")),
+                        DropdownMenuItem(value: 5, child: Text("5s")),
+                        DropdownMenuItem(value: 10, child: Text("10s")),
+                        DropdownMenuItem(value: 30, child: Text("30s")),
+                      ],
+                      onChanged: (val) {
+                        setInputState(() => _expiresInSeconds = val ?? 0);
+                        _expiresInSeconds = val ?? 0;
+                      },
                     ),
                   ],
                 ),
-              )
-            else
-              Row(
-                children: [
-                  IconButton(
-                    icon: const Icon(Icons.add_photo_alternate_outlined, color: AppTheme.secondaryNeon, size: 26),
-                    tooltip: 'Send Photo',
-                    onPressed: _isSendingMedia ? null : _showImagePickerOptions,
-                  ),
-                  Expanded(
-                    child: TextField(
-                      controller: _messageController,
-                      style: const TextStyle(color: Colors.white),
-                      decoration: InputDecoration(
-                        hintText: _isSecretMode ? 'Tap to reveal later...' : 'Type message...',
-                        hintStyle: const TextStyle(color: Colors.white54),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(24),
-                          borderSide: BorderSide.none,
+
+                if (_isRecordingVoice)
+                  Container(
+                    margin: const EdgeInsets.symmetric(vertical: 4),
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFF2A0845), Color(0xFF1E1E2C)],
+                      ),
+                      borderRadius: BorderRadius.circular(24),
+                      border: Border.all(color: Colors.redAccent.withOpacity(0.6), width: 1.5),
+                    ),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 12,
+                          height: 12,
+                          decoration: const BoxDecoration(
+                            color: Colors.redAccent,
+                            shape: BoxShape.circle,
+                          ),
                         ),
-                        filled: true,
-                        fillColor: Colors.white12,
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                      ),
-                      onSubmitted: (_) => _sendMessage(),
+                        const SizedBox(width: 10),
+                        Text(
+                          'Recording... ${_formatDuration(_recordDurationSeconds)}',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 14,
+                          ),
+                        ),
+                        const Spacer(),
+                        IconButton(
+                          icon: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent, size: 24),
+                          tooltip: 'Cancel',
+                          onPressed: _cancelVoiceRecording,
+                        ),
+                        const SizedBox(width: 4),
+                        Container(
+                          decoration: const BoxDecoration(
+                            color: Color(0xFF00FF88),
+                            shape: BoxShape.circle,
+                          ),
+                          child: IconButton(
+                            icon: const Icon(Icons.send_rounded, color: Colors.black87, size: 20),
+                            tooltip: 'Send Voice Note',
+                            onPressed: _stopAndSendVoiceRecording,
+                          ),
+                        ),
+                      ],
                     ),
+                  )
+                else
+                  Row(
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.add_photo_alternate_outlined, color: AppTheme.secondaryNeon, size: 26),
+                        tooltip: 'Send Photo',
+                        onPressed: _isSendingMedia ? null : _showImagePickerOptions,
+                      ),
+                      Expanded(
+                        child: TextField(
+                          controller: _messageController,
+                          style: const TextStyle(color: Colors.white),
+                          decoration: InputDecoration(
+                            hintText: _isSecretMode ? 'Tap to reveal later...' : 'Type message...',
+                            hintStyle: const TextStyle(color: Colors.white54),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(24),
+                              borderSide: BorderSide.none,
+                            ),
+                            filled: true,
+                            fillColor: Colors.white12,
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                          ),
+                          onSubmitted: (_) => _sendMessage(),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      if (hasText)
+                        CircleAvatar(
+                          backgroundColor: AppTheme.primaryNeon,
+                          child: IconButton(
+                            icon: const Icon(Icons.send, color: Colors.white),
+                            onPressed: _sendMessage,
+                          ),
+                        )
+                      else
+                        CircleAvatar(
+                          backgroundColor: const Color(0xFF2C2C3E),
+                          child: IconButton(
+                            icon: const Icon(Icons.mic_none_rounded, color: AppTheme.secondaryNeon),
+                            tooltip: 'Record Voice Note',
+                            onPressed: _startVoiceRecording,
+                          ),
+                        ),
+                    ],
                   ),
-                  const SizedBox(width: 8),
-                  if (hasText)
-                    CircleAvatar(
-                      backgroundColor: AppTheme.primaryNeon,
-                      child: IconButton(
-                        icon: const Icon(Icons.send, color: Colors.white),
-                        onPressed: _sendMessage,
-                      ),
-                    )
-                  else
-                    CircleAvatar(
-                      backgroundColor: const Color(0xFF2C2C3E),
-                      child: IconButton(
-                        icon: const Icon(Icons.mic_none_rounded, color: AppTheme.secondaryNeon),
-                        tooltip: 'Record Voice Note',
-                        onPressed: _startVoiceRecording,
-                      ),
-                    ),
-                ],
-              ),
-          ],
-        ),
-      ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 }

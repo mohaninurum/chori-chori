@@ -17,6 +17,12 @@ class WebRTCRepository {
   String? _roomId;
   String? _userId;
 
+  final List<RTCIceCandidate> _remoteCandidatesQueue = [];
+  bool _isRemoteDescriptionSet = false;
+
+  MediaStream? get localStream => _localStream;
+  MediaStream? get remoteStream => _remoteStream;
+
   String get _sessionDocName => isAudioOnly ? 'audio_session' : 'session';
 
   StreamSubscription? _sessionSubscription;
@@ -36,6 +42,48 @@ class WebRTCRepository {
     onCallStatusChanged?.call(newStatus);
   }
 
+  Future<void> _cleanCandidateCollection(CollectionReference ref) async {
+    try {
+      final snapshot = await ref.get();
+      for (final doc in snapshot.docs) {
+        await doc.reference.delete();
+      }
+    } catch (e) {
+      debugPrint('Error cleaning candidate collection: $e');
+    }
+  }
+
+  Future<void> _addOrQueueCandidate(RTCIceCandidate candidate) async {
+    if (_peerConnection == null) return;
+    if (!_isRemoteDescriptionSet) {
+      debugPrint('Queueing ICE candidate until remote description is set: ${candidate.sdpMid}');
+      _remoteCandidatesQueue.add(candidate);
+      return;
+    }
+    try {
+      await _peerConnection!.addCandidate(candidate);
+      debugPrint('Added ICE candidate directly: ${candidate.sdpMid}');
+    } catch (e) {
+      debugPrint('Error adding ICE candidate: $e');
+    }
+  }
+
+  Future<void> _processQueuedCandidates() async {
+    if (_peerConnection == null) return;
+    if (_remoteCandidatesQueue.isEmpty) return;
+    debugPrint('Flushing ${_remoteCandidatesQueue.length} queued ICE candidates');
+    final queue = List<RTCIceCandidate>.from(_remoteCandidatesQueue);
+    _remoteCandidatesQueue.clear();
+    for (final candidate in queue) {
+      try {
+        await _peerConnection!.addCandidate(candidate);
+        debugPrint('Added queued ICE candidate: ${candidate.sdpMid}');
+      } catch (e) {
+        debugPrint('Error adding queued ICE candidate: $e');
+      }
+    }
+  }
+
   Future<bool> initLocalStream() async {
     try {
       final mediaConstraints = <String, dynamic>{
@@ -48,7 +96,20 @@ class WebRTCRepository {
               },
       };
 
-      _localStream = await navigator.mediaDevices.getUserMedia(mediaConstraints);
+      try {
+        _localStream = await navigator.mediaDevices.getUserMedia(mediaConstraints);
+      } catch (e) {
+        if (!isAudioOnly) {
+          debugPrint('getUserMedia with facingMode constraint failed, retrying simple video: $e');
+          _localStream = await navigator.mediaDevices.getUserMedia({
+            'audio': true,
+            'video': true,
+          });
+        } else {
+          rethrow;
+        }
+      }
+
       if (onAddLocalStream != null && _localStream != null) {
         onAddLocalStream!(_localStream!);
       }
@@ -67,19 +128,49 @@ class WebRTCRepository {
         {'urls': 'stun:stun.l.google.com:19302'},
         {'urls': 'stun:stun1.l.google.com:19302'},
         {'urls': 'stun:stun2.l.google.com:19302'},
+        {'urls': 'stun:stun3.l.google.com:19302'},
+        {'urls': 'stun:stun4.l.google.com:19302'},
+        {'urls': 'stun:stun.services.mozilla.com'},
       ],
       'sdpSemantics': 'unified-plan',
     };
 
     _peerConnection = await createPeerConnection(configuration);
 
-    _peerConnection?.onTrack = (RTCTrackEvent event) {
+    _peerConnection?.onIceConnectionState = (RTCIceConnectionState state) {
+      debugPrint('WebRTC ICE connection state: $state');
+      if (state == RTCIceConnectionState.RTCIceConnectionStateConnected ||
+          state == RTCIceConnectionState.RTCIceConnectionStateCompleted) {
+        _setStatus(CallStatus.connected);
+      } else if (state == RTCIceConnectionState.RTCIceConnectionStateFailed) {
+        debugPrint('WebRTC ICE connection failed!');
+      }
+    };
+
+    _peerConnection?.onAddStream = (MediaStream stream) {
+      debugPrint('WebRTC onAddStream: id=${stream.id}, audioTracks=${stream.getAudioTracks().length}, videoTracks=${stream.getVideoTracks().length}');
+      if (stream.id != _localStream?.id) {
+        _remoteStream = stream;
+        _setStatus(CallStatus.connected);
+        onAddRemoteStream?.call(stream);
+      }
+    };
+
+    _peerConnection?.onTrack = (RTCTrackEvent event) async {
+      debugPrint('WebRTC onTrack: track.kind=${event.track.kind}, streams=${event.streams.length}');
       if (event.streams.isNotEmpty && event.streams[0].id != _localStream?.id) {
         _remoteStream = event.streams[0];
-        _setStatus(CallStatus.connected);
-        if (onAddRemoteStream != null) {
-          onAddRemoteStream!(_remoteStream!);
+      } else {
+        if (_remoteStream == null) {
+          _remoteStream = await createLocalMediaStream('remote_stream_${DateTime.now().millisecondsSinceEpoch}');
         }
+        if (!_remoteStream!.getTracks().any((t) => t.id == event.track.id)) {
+          _remoteStream!.addTrack(event.track);
+        }
+      }
+      _setStatus(CallStatus.connected);
+      if (_remoteStream != null) {
+        onAddRemoteStream?.call(_remoteStream!);
       }
     };
 
@@ -98,7 +189,7 @@ class WebRTCRepository {
             .collection(targetCandidateCollection)
             .add(candidate.toMap())
             .catchError((e) {
-          debugPrint('Error adding ICE candidate: $e');
+          debugPrint('Error adding ICE candidate to Firestore: $e');
         });
       }
     };
@@ -140,11 +231,21 @@ class WebRTCRepository {
 
   Future<void> _startCall(DocumentReference sessionRef) async {
     _setStatus(CallStatus.calling);
+    _isRemoteDescriptionSet = false;
+    _remoteCandidatesQueue.clear();
+
+    // Clean up previous call candidates from Firestore
+    await _cleanCandidateCollection(sessionRef.collection('callerCandidates'));
+    await _cleanCandidateCollection(sessionRef.collection('calleeCandidates'));
+
     await _createPeerConnection(true);
 
     final offer = await _peerConnection!.createOffer(<String, dynamic>{
-      'offerToReceiveVideo': isAudioOnly ? 0 : 1,
-      'offerToReceiveAudio': 1,
+      'mandatory': {
+        'OfferToReceiveAudio': true,
+        'OfferToReceiveVideo': !isAudioOnly,
+      },
+      'optional': [],
     });
     await _peerConnection!.setLocalDescription(offer);
 
@@ -167,6 +268,8 @@ class WebRTCRepository {
             data['answer']['type'],
           );
           await _peerConnection?.setRemoteDescription(answer);
+          _isRemoteDescriptionSet = true;
+          await _processQueuedCandidates();
           _setStatus(CallStatus.connected);
         }
       } else if (data != null && data['status'] == 'rejected') {
@@ -177,14 +280,17 @@ class WebRTCRepository {
     });
 
     _candidatesSubscription?.cancel();
-    _candidatesSubscription = sessionRef.collection('calleeCandidates').snapshots().listen((snapshot) {
+    _candidatesSubscription = sessionRef.collection('calleeCandidates').snapshots().listen((snapshot) async {
       for (final change in snapshot.docChanges) {
         if (change.type == DocumentChangeType.added) {
           final data = change.doc.data();
           if (data != null && data['candidate'] != null) {
-            _peerConnection?.addCandidate(
-              RTCIceCandidate(data['candidate'], data['sdpMid'], data['sdpMLineIndex']),
+            final candidate = RTCIceCandidate(
+              data['candidate'],
+              data['sdpMid'],
+              data['sdpMLineIndex'],
             );
+            await _addOrQueueCandidate(candidate);
           }
         }
       }
@@ -192,16 +298,23 @@ class WebRTCRepository {
   }
 
   Future<void> _joinCall(DocumentReference sessionRef, Map<String, dynamic> data) async {
+    _isRemoteDescriptionSet = false;
+    _remoteCandidatesQueue.clear();
+
     await _createPeerConnection(false);
 
     final offer = data['offer'];
-    await _peerConnection!.setRemoteDescription(
-      RTCSessionDescription(offer['sdp'], offer['type']),
-    );
+    final remoteOfferDesc = RTCSessionDescription(offer['sdp'], offer['type']);
+    await _peerConnection!.setRemoteDescription(remoteOfferDesc);
+    _isRemoteDescriptionSet = true;
+    await _processQueuedCandidates();
 
     final answer = await _peerConnection!.createAnswer(<String, dynamic>{
-      'offerToReceiveVideo': isAudioOnly ? 0 : 1,
-      'offerToReceiveAudio': 1,
+      'mandatory': {
+        'OfferToReceiveAudio': true,
+        'OfferToReceiveVideo': !isAudioOnly,
+      },
+      'optional': [],
     });
     await _peerConnection!.setLocalDescription(answer);
 
@@ -212,14 +325,17 @@ class WebRTCRepository {
     _setStatus(CallStatus.connected);
 
     _candidatesSubscription?.cancel();
-    _candidatesSubscription = sessionRef.collection('callerCandidates').snapshots().listen((snapshot) {
+    _candidatesSubscription = sessionRef.collection('callerCandidates').snapshots().listen((snapshot) async {
       for (final change in snapshot.docChanges) {
         if (change.type == DocumentChangeType.added) {
-          final data = change.doc.data();
-          if (data != null && data['candidate'] != null) {
-            _peerConnection?.addCandidate(
-              RTCIceCandidate(data['candidate'], data['sdpMid'], data['sdpMLineIndex']),
+          final candidateData = change.doc.data();
+          if (candidateData != null && candidateData['candidate'] != null) {
+            final candidate = RTCIceCandidate(
+              candidateData['candidate'],
+              candidateData['sdpMid'],
+              candidateData['sdpMLineIndex'],
             );
+            await _addOrQueueCandidate(candidate);
           }
         }
       }
@@ -258,9 +374,10 @@ class WebRTCRepository {
     }
   }
 
-  void toggleSpeaker(bool enabled) {
+  Future<void> toggleSpeaker(bool enabled) async {
     try {
-      Helper.setSpeakerphoneOn(enabled);
+      await Helper.setSpeakerphoneOn(enabled);
+      debugPrint('Speakerphone set to: $enabled');
     } catch (e) {
       debugPrint('Error toggling speakerphone: $e');
     }
@@ -311,6 +428,13 @@ class WebRTCRepository {
     _candidatesSubscription?.cancel();
     _sessionSubscription = null;
     _candidatesSubscription = null;
+
+    _remoteCandidatesQueue.clear();
+    _isRemoteDescriptionSet = false;
+
+    try {
+      await Helper.setSpeakerphoneOn(false);
+    } catch (_) {}
 
     if (_localStream != null) {
       for (final track in _localStream!.getTracks()) {

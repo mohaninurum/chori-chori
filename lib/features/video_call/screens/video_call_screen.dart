@@ -4,6 +4,7 @@ import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../auth/providers/auth_provider.dart';
+import '../../room/models/room_model.dart';
 import '../../room/providers/room_provider.dart';
 import '../../room/widgets/smart_expiry_timer.dart';
 import '../providers/webrtc_provider.dart';
@@ -20,8 +21,9 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
   final RTCVideoRenderer _localRenderer = RTCVideoRenderer();
   final RTCVideoRenderer _remoteRenderer = RTCVideoRenderer();
 
-  bool _isMicMuted = true;
+  bool _isMicMuted = false;
   bool _isVideoMuted = false;
+  bool _isSpeakerOn = true;
   bool _isConnecting = true;
   String _statusText = 'Initializing camera & audio...';
 
@@ -43,6 +45,13 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
     if (roomId == null) {
       if (mounted) context.pop();
       return;
+    }
+
+    if (webrtcRepo.localStream != null) {
+      _localRenderer.srcObject = webrtcRepo.localStream;
+    }
+    if (webrtcRepo.remoteStream != null) {
+      _remoteRenderer.srcObject = webrtcRepo.remoteStream;
     }
 
     webrtcRepo.onAddLocalStream = (stream) {
@@ -129,8 +138,9 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
       return;
     }
 
-    // Default to mic muted on call start / join
-    webrtcRepo.toggleAudio(false);
+    // Unmute audio & enable loudspeaker by default for video calls
+    webrtcRepo.toggleAudio(true);
+    await webrtcRepo.toggleSpeaker(true);
 
     if (mounted) {
       setState(() => _statusText = 'Connecting to safe room...');
@@ -163,21 +173,23 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
     // Watch provider to keep it active
     final webrtcRepo = ref.watch(webRTCProvider);
     final room = ref.watch(currentRoomProvider).value;
-    final liveRoomAsync = room != null ? ref.watch(roomRepositoryProvider).watchRoom(room.id) : null;
-
     if (room == null) return const Scaffold(body: Center(child: Text('No room data')));
 
-    final hasRemoteVideo = _remoteRenderer.srcObject != null;
-
-    return StreamBuilder(
-      stream: liveRoomAsync,
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.active && !snapshot.hasData) {
+    ref.listen<AsyncValue<Room?>>(
+      roomStreamProvider(room.id),
+      (previous, next) {
+        if (next.hasValue && next.value == null) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
             _onRoomExpired();
           });
         }
-        return Scaffold(
+      },
+    );
+
+    final hasRemoteVideo = _remoteRenderer.srcObject != null &&
+        _remoteRenderer.srcObject!.getVideoTracks().isNotEmpty;
+
+    return Scaffold(
           backgroundColor: Colors.black,
           body: Stack(
             children: [
@@ -280,7 +292,8 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
                   ),
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(14),
-                    child: _localRenderer.srcObject != null
+                    child: _localRenderer.srcObject != null &&
+                            _localRenderer.srcObject!.getVideoTracks().isNotEmpty
                         ? RTCVideoView(
                             _localRenderer,
                             mirror: true,
@@ -300,7 +313,7 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
                   child: Padding(
                     padding: const EdgeInsets.only(bottom: 24.0),
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                       decoration: BoxDecoration(
                         color: Colors.black54,
                         borderRadius: BorderRadius.circular(40),
@@ -316,7 +329,16 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
                               webrtcRepo.toggleAudio(!_isMicMuted);
                             },
                           ),
-                          const SizedBox(width: 16),
+                          const SizedBox(width: 12),
+                          _buildControlButton(
+                            icon: _isSpeakerOn ? Icons.volume_up : Icons.volume_off,
+                            color: _isSpeakerOn ? AppTheme.primaryNeon : Colors.white24,
+                            onPressed: () {
+                              setState(() => _isSpeakerOn = !_isSpeakerOn);
+                              webrtcRepo.toggleSpeaker(_isSpeakerOn);
+                            },
+                          ),
+                          const SizedBox(width: 12),
                           _buildControlButton(
                             icon: Icons.call_end,
                             color: Colors.red,
@@ -324,7 +346,7 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
                             iconSize: 32,
                             onPressed: _endCall,
                           ),
-                          const SizedBox(width: 16),
+                          const SizedBox(width: 12),
                           _buildControlButton(
                             icon: _isVideoMuted ? Icons.videocam_off : Icons.videocam,
                             color: _isVideoMuted ? Colors.redAccent : Colors.white24,
@@ -333,7 +355,7 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
                               webrtcRepo.toggleVideo(!_isVideoMuted);
                             },
                           ),
-                          const SizedBox(width: 16),
+                          const SizedBox(width: 12),
                           _buildControlButton(
                             icon: Icons.cameraswitch,
                             color: Colors.white24,
@@ -348,8 +370,6 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
             ],
           ),
         );
-      },
-    );
   }
 
   Widget _buildControlButton({

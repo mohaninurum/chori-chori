@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/room_model.dart';
+export '../models/room_model.dart';
 import 'dart:async';
 
 final firestoreProvider = Provider<FirebaseFirestore>((ref) {
@@ -347,4 +348,9 @@ class RoomNotifier extends AsyncNotifier<Room?> {
 
 final currentRoomProvider = AsyncNotifierProvider<RoomNotifier, Room?>(() {
   return RoomNotifier();
+});
+
+final roomStreamProvider =
+    StreamProvider.autoDispose.family<Room?, String>((ref, roomId) {
+  return ref.watch(roomRepositoryProvider).watchRoom(roomId);
 });

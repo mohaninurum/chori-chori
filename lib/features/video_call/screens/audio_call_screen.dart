@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../auth/providers/auth_provider.dart';
+import '../../room/models/room_model.dart';
 import '../../room/providers/room_provider.dart';
 import '../../room/widgets/smart_expiry_timer.dart';
 import '../providers/webrtc_provider.dart';
@@ -17,8 +18,8 @@ class AudioCallScreen extends ConsumerStatefulWidget {
 
 class _AudioCallScreenState extends ConsumerState<AudioCallScreen>
     with SingleTickerProviderStateMixin {
-  bool _isMicMuted = true; // Starts MUTED by default as requested
-  bool _isSpeakerOn = false;
+  bool _isMicMuted = false;
+  bool _isSpeakerOn = true;
   bool _isConnecting = true;
   bool _isConnected = false;
   String _statusText = 'Connecting encrypted audio...';
@@ -54,6 +55,7 @@ class _AudioCallScreenState extends ConsumerState<AudioCallScreen>
           _isConnected = true;
           _statusText = 'Connected';
         });
+        audioRepo.toggleSpeaker(_isSpeakerOn);
         _startDurationTimer();
       }
     };
@@ -71,6 +73,7 @@ class _AudioCallScreenState extends ConsumerState<AudioCallScreen>
             _statusText = 'Connected';
             _isConnecting = false;
             _isConnected = true;
+            audioRepo.toggleSpeaker(_isSpeakerOn);
             _startDurationTimer();
             break;
           case CallStatus.rejected:
@@ -132,8 +135,9 @@ class _AudioCallScreenState extends ConsumerState<AudioCallScreen>
       return;
     }
 
-    // Audio starts MUTED by default
-    audioRepo.toggleAudio(false);
+    // Audio starts unmuted & loudspeaker enabled by default
+    audioRepo.toggleAudio(true);
+    await audioRepo.toggleSpeaker(true);
 
     if (mounted) {
       setState(() => _statusText = 'Connecting to safe room...');
@@ -176,22 +180,22 @@ class _AudioCallScreenState extends ConsumerState<AudioCallScreen>
   @override
   Widget build(BuildContext context) {
     final room = ref.watch(currentRoomProvider).value;
-    final liveRoomAsync =
-        room != null ? ref.watch(roomRepositoryProvider).watchRoom(room.id) : null;
     final audioRepo = ref.watch(audioWebRTCProvider);
 
     if (room == null) return const Scaffold(body: Center(child: Text('No room data')));
 
-    return StreamBuilder(
-      stream: liveRoomAsync,
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.active && !snapshot.hasData) {
+    ref.listen<AsyncValue<Room?>>(
+      roomStreamProvider(room.id),
+      (previous, next) {
+        if (next.hasValue && next.value == null) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
             _endCall();
           });
         }
+      },
+    );
 
-        return Scaffold(
+    return Scaffold(
           backgroundColor: const Color(0xFF0F0B18),
           body: Container(
             decoration: const BoxDecoration(
@@ -416,8 +420,6 @@ class _AudioCallScreenState extends ConsumerState<AudioCallScreen>
             ),
           ),
         );
-      },
-    );
   }
 
   Widget _buildControlButton({
