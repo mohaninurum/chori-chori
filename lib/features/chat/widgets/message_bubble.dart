@@ -29,12 +29,23 @@ class _MessageBubbleState extends ConsumerState<MessageBubble> {
   Timer? _concealTimer;
   double _opacity = 1.0;
   bool _isDeleting = false;
+  int _secondsRemaining = 0;
 
   @override
   void initState() {
     super.initState();
     // Non-secret messages are revealed by default. Secret messages start concealed.
     _isRevealed = !widget.message.isSecret;
+    if (widget.message.expiresInSeconds > 0) {
+      final elapsed = DateTime.now().difference(widget.message.createdAt).inSeconds;
+      final remaining = widget.message.expiresInSeconds - elapsed;
+      if (remaining <= 0) {
+        _opacity = 0.0;
+        _isDeleting = true;
+      } else {
+        _secondsRemaining = remaining;
+      }
+    }
     _initSelfDestruct();
   }
 
@@ -43,6 +54,7 @@ class _MessageBubbleState extends ConsumerState<MessageBubble> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.message.id != widget.message.id) {
       _countdownTimer?.cancel();
+      _countdownTimer = null;
       _concealTimer?.cancel();
       _isDeleting = false;
       _opacity = 1.0;
@@ -54,6 +66,15 @@ class _MessageBubbleState extends ConsumerState<MessageBubble> {
   void _initSelfDestruct() {
     if (widget.message.expiresInSeconds <= 0) return;
 
+    if (_isDeleting) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          ref.read(chatRepositoryProvider).deleteMessage(widget.roomId, widget.message.id);
+        }
+      });
+      return;
+    }
+
     // For secret messages, destruction timer only starts once tapped/revealed!
     if (widget.message.isSecret && !_isRevealed) {
       return;
@@ -63,7 +84,7 @@ class _MessageBubbleState extends ConsumerState<MessageBubble> {
   }
 
   void _startCountdown() {
-    if (_countdownTimer != null) return;
+    if (_countdownTimer != null || _isDeleting) return;
 
     final elapsed = DateTime.now().difference(widget.message.createdAt).inSeconds;
     final remaining = widget.message.expiresInSeconds - elapsed;
@@ -72,9 +93,21 @@ class _MessageBubbleState extends ConsumerState<MessageBubble> {
       return;
     }
 
-    _countdownTimer = Timer(Duration(seconds: remaining), () {
-      if (mounted) {
+    _secondsRemaining = remaining;
+
+    _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      if (_secondsRemaining <= 1) {
+        timer.cancel();
+        _countdownTimer = null;
         _triggerDestruction();
+      } else {
+        setState(() {
+          _secondsRemaining--;
+        });
       }
     });
   }
@@ -82,11 +115,13 @@ class _MessageBubbleState extends ConsumerState<MessageBubble> {
   void _triggerDestruction() {
     if (_isDeleting || !mounted) return;
     _isDeleting = true;
+    _countdownTimer?.cancel();
+    _countdownTimer = null;
     setState(() {
       _opacity = 0.0;
     });
 
-    Future.delayed(const Duration(milliseconds: 350), () {
+    Future.delayed(const Duration(milliseconds: 300), () {
       if (mounted) {
         ref.read(chatRepositoryProvider).deleteMessage(widget.roomId, widget.message.id);
       }
@@ -330,7 +365,9 @@ class _MessageBubbleState extends ConsumerState<MessageBubble> {
                                     ),
                                     const SizedBox(width: 3),
                                     Text(
-                                      'Self-destruct',
+                                      _secondsRemaining > 0
+                                          ? 'Self-destruct ${_secondsRemaining}s'
+                                          : 'Self-destruct',
                                       style: TextStyle(
                                         fontSize: 10,
                                         fontWeight: FontWeight.w600,

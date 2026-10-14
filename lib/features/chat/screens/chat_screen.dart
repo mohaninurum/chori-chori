@@ -976,6 +976,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                 ),
                 Expanded(
                   child: messagesAsync.when(
+                    skipLoadingOnRefresh: true,
+                    skipLoadingOnReload: true,
                     data: (messages) {
                       if (messages.isEmpty) {
                          return const Center(child: Text('Be the first to say something secret...', style: TextStyle(color: Colors.white54)));
@@ -1022,31 +1024,100 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
               children: [
                 Row(
                   children: [
-                    const Text('Secret Mode', style: TextStyle(color: AppTheme.secondaryNeon, fontSize: 12)),
-                    Switch(
-                      value: _isSecretMode,
-                      activeColor: AppTheme.secondaryNeon,
-                      onChanged: (val) {
-                        setInputState(() => _isSecretMode = val);
-                        _isSecretMode = val;
-                      },
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.visibility_off_outlined,
+                          size: 15,
+                          color: _isSecretMode ? AppTheme.secondaryNeon : Colors.white54,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          'Secret',
+                          style: TextStyle(
+                            color: _isSecretMode ? AppTheme.secondaryNeon : Colors.white54,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        Transform.scale(
+                          scale: 0.75,
+                          child: Switch(
+                            value: _isSecretMode,
+                            activeColor: AppTheme.secondaryNeon,
+                            onChanged: (val) {
+                              setInputState(() => _isSecretMode = val);
+                              _isSecretMode = val;
+                            },
+                          ),
+                        ),
+                      ],
                     ),
                     const Spacer(),
-                    const Text('Self-destruct: ', style: TextStyle(color: Colors.white54, fontSize: 12)),
-                    DropdownButton<int>(
-                      value: _expiresInSeconds,
-                      dropdownColor: AppTheme.backgroundDark,
-                      style: const TextStyle(color: AppTheme.primaryNeon),
-                      items: const [
-                        DropdownMenuItem(value: 0, child: Text("Never")),
-                        DropdownMenuItem(value: 5, child: Text("5s")),
-                        DropdownMenuItem(value: 10, child: Text("10s")),
-                        DropdownMenuItem(value: 30, child: Text("30s")),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.auto_delete_outlined,
+                          size: 15,
+                          color: _expiresInSeconds > 0 ? Colors.orangeAccent : Colors.white54,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          'Timer:',
+                          style: TextStyle(
+                            color: _expiresInSeconds > 0 ? Colors.orangeAccent : Colors.white54,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        ...[
+                          (0, 'Off'),
+                          (5, '5s'),
+                          (10, '10s'),
+                          (30, '30s'),
+                        ].map((opt) {
+                          final isSelected = _expiresInSeconds == opt.$1;
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 2.0),
+                            child: InkWell(
+                              borderRadius: BorderRadius.circular(8),
+                              onTap: () {
+                                setInputState(() => _expiresInSeconds = opt.$1);
+                                _expiresInSeconds = opt.$1;
+                              },
+                              child: AnimatedContainer(
+                                duration: const Duration(milliseconds: 180),
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                                decoration: BoxDecoration(
+                                  color: isSelected
+                                      ? (opt.$1 == 0 ? Colors.white24 : Colors.orangeAccent)
+                                      : Colors.transparent,
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(
+                                    color: isSelected
+                                        ? (opt.$1 == 0 ? Colors.white54 : Colors.orangeAccent)
+                                        : Colors.white24,
+                                    width: 1,
+                                  ),
+                                ),
+                                child: Text(
+                                  opt.$2,
+                                  style: TextStyle(
+                                    color: isSelected
+                                        ? (opt.$1 == 0 ? Colors.white : Colors.black87)
+                                        : Colors.white70,
+                                    fontSize: 10,
+                                    fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          );
+                        }),
                       ],
-                      onChanged: (val) {
-                        setInputState(() => _expiresInSeconds = val ?? 0);
-                        _expiresInSeconds = val ?? 0;
-                      },
                     ),
                   ],
                 ),
