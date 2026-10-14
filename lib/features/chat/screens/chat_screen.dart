@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:go_router/go_router.dart';
@@ -107,6 +108,21 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     _setPresence(false);
     _messageController.dispose();
     super.dispose();
+  }
+
+  bool _isCallActive(Map<String, dynamic>? data, String currentUserId) {
+    if (data == null) return false;
+    if (data['status'] != 'calling') return false;
+    if (data['callerId'] == currentUserId) return false;
+    final createdAt = data['createdAt'];
+    if (createdAt is Timestamp) {
+      final age = DateTime.now().difference(createdAt.toDate());
+      if (age.inSeconds > 90) return false;
+    } else if (createdAt is DateTime) {
+      final age = DateTime.now().difference(createdAt);
+      if (age.inSeconds > 90) return false;
+    }
+    return true;
   }
 
   void _showIncomingCallDialog(String roomId) {
@@ -659,15 +675,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     );
     final callSessionAsync = ref.watch(callSessionStreamProvider(room.id));
     final callData = callSessionAsync.value;
-    final isIncomingCall = callData != null &&
-        callData['status'] == 'calling' &&
-        callData['callerId'] != currentUserId;
+    final isIncomingCall = _isCallActive(callData, currentUserId);
 
     final audioCallSessionAsync = ref.watch(audioCallSessionStreamProvider(room.id));
     final audioCallData = audioCallSessionAsync.value;
-    final isIncomingAudioCall = audioCallData != null &&
-        audioCallData['status'] == 'calling' &&
-        audioCallData['callerId'] != currentUserId;
+    final isIncomingAudioCall = _isCallActive(audioCallData, currentUserId);
 
     ref.listen<AsyncValue<Room?>>(
       roomStreamProvider(room.id),
@@ -684,9 +696,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
       callSessionStreamProvider(room.id),
       (previous, next) {
         final data = next.value;
-        final isCalling = data != null &&
-            data['status'] == 'calling' &&
-            data['callerId'] != currentUserId;
+        final isCalling = _isCallActive(data, currentUserId);
 
         if (isCalling && !_isCallDialogShowing) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -707,9 +717,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
       audioCallSessionStreamProvider(room.id),
       (previous, next) {
         final data = next.value;
-        final isCalling = data != null &&
-            data['status'] == 'calling' &&
-            data['callerId'] != currentUserId;
+        final isCalling = _isCallActive(data, currentUserId);
 
         if (isCalling && !_isAudioCallDialogShowing) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
