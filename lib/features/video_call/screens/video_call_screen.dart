@@ -113,7 +113,8 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
             _statusText = 'Connected';
             _isConnecting = false;
             webrtcRepo.toggleSpeaker(_isSpeakerOn);
-            if (webrtcRepo.remoteStream != null && _remoteRenderer.srcObject == null) {
+            if (webrtcRepo.remoteStream != null) {
+              _remoteRenderer.srcObject = null;
               _remoteRenderer.srcObject = webrtcRepo.remoteStream;
             }
             break;
@@ -198,7 +199,9 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
   }
 
   void _onRoomExpired() {
-    _endCall();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _endCall();
+    });
   }
 
   @override
@@ -226,57 +229,61 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
       backgroundColor: Colors.black,
       body: Stack(
         children: [
-          // Remote video or Connecting View
+          // Remote video: always mounted so Android native texture is ready from frame 1
           Positioned.fill(
-            child: hasRemoteVideo
-                ? RTCVideoView(
-                    _remoteRenderer,
-                    objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
-                  )
-                : Container(
-                    color: Colors.black87,
-                    child: Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Container(
-                            width: 100,
-                            height: 100,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              color: AppTheme.primaryNeon.withOpacity(0.15),
-                              border: Border.all(color: AppTheme.primaryNeon, width: 2),
-                            ),
-                            child: const Icon(
-                              Icons.videocam,
-                              size: 48,
-                              color: AppTheme.primaryNeon,
-                            ),
-                          ),
-                          const SizedBox(height: 24),
-                          Text(
-                            _statusText,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 18,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          const SizedBox(height: 12),
-                          if (_isConnecting)
-                            const SizedBox(
-                              width: 24,
-                              height: 24,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2.5,
-                                color: AppTheme.primaryNeon,
-                              ),
-                            ),
-                        ],
-                      ),
-                    ),
-                  ),
+            child: RTCVideoView(
+              _remoteRenderer,
+              objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+            ),
           ),
+
+          // Connecting / Waiting placeholder overlay
+          if (!hasRemoteVideo)
+            Positioned.fill(
+              child: Container(
+                color: Colors.black87,
+                child: Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Container(
+                        width: 100,
+                        height: 100,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: AppTheme.primaryNeon.withOpacity(0.15),
+                          border: Border.all(color: AppTheme.primaryNeon, width: 2),
+                        ),
+                        child: const Icon(
+                          Icons.videocam,
+                          size: 48,
+                          color: AppTheme.primaryNeon,
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                      Text(
+                        _statusText,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 18,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      if (_isConnecting)
+                        const SizedBox(
+                          width: 24,
+                          height: 24,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2.5,
+                            color: AppTheme.primaryNeon,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
 
           // Top Bar (Expiry & Back)
           SafeArea(

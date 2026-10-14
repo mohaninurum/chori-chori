@@ -117,10 +117,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     final createdAt = data['createdAt'];
     if (createdAt is Timestamp) {
       final age = DateTime.now().difference(createdAt.toDate());
-      if (age.inSeconds > 90) return false;
+      if (age.inSeconds.abs() > 180) return false;
     } else if (createdAt is DateTime) {
       final age = DateTime.now().difference(createdAt);
-      if (age.inSeconds > 90) return false;
+      if (age.inSeconds.abs() > 180) return false;
     }
     return true;
   }
