@@ -65,8 +65,7 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
     if (webrtcRepo.localStream != null) {
       _localRenderer.srcObject = webrtcRepo.localStream;
     }
-    if (webrtcRepo.remoteStream != null) {
-      _remoteRenderer.srcObject = null;
+    if (webrtcRepo.remoteStream != null && _remoteRenderer.srcObject != webrtcRepo.remoteStream) {
       _remoteRenderer.srcObject = webrtcRepo.remoteStream;
     }
 
@@ -81,24 +80,15 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
     webrtcRepo.onAddRemoteStream = (stream) {
       debugPrint('VideoCallScreen onAddRemoteStream received stream: ${stream.id}');
       if (mounted) {
-        setState(() {
-          _remoteRenderer.srcObject = null;
+        if (_remoteRenderer.srcObject != stream) {
           _remoteRenderer.srcObject = stream;
+        }
+        setState(() {
           _isConnecting = false;
           _statusText = 'Connected';
         });
         webrtcRepo.toggleSpeaker(_isSpeakerOn);
       }
-
-      stream.onAddTrack = (track) {
-        debugPrint('VideoCallScreen remote stream onAddTrack: ${track.kind}');
-        if (mounted) {
-          setState(() {
-            _remoteRenderer.srcObject = null;
-            _remoteRenderer.srcObject = stream;
-          });
-        }
-      };
     };
 
     webrtcRepo.onCallStatusChanged = (status) {
@@ -113,8 +103,7 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
             _statusText = 'Connected';
             _isConnecting = false;
             webrtcRepo.toggleSpeaker(_isSpeakerOn);
-            if (webrtcRepo.remoteStream != null) {
-              _remoteRenderer.srcObject = null;
+            if (webrtcRepo.remoteStream != null && _remoteRenderer.srcObject != webrtcRepo.remoteStream) {
               _remoteRenderer.srcObject = webrtcRepo.remoteStream;
             }
             break;
