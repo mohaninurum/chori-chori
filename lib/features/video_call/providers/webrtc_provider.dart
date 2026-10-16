@@ -128,6 +128,7 @@ class WebRTCRepository {
         {'urls': 'stun:stun3.l.google.com:19302'},
         {'urls': 'stun:stun4.l.google.com:19302'},
         {'urls': 'stun:stun.cloudflare.com:3478'},
+        {'urls': 'stun:stun.services.mozilla.com'},
       ],
       'sdpSemantics': 'unified-plan',
     };
@@ -157,11 +158,16 @@ class WebRTCRepository {
       }
     };
 
-    _peerConnection?.onTrack = (RTCTrackEvent event) {
+    _peerConnection?.onTrack = (RTCTrackEvent event) async {
       debugPrint('WebRTC onTrack: kind=${event.track.kind}, id=${event.track.id}, streams=${event.streams.length}');
       event.track.enabled = true;
       if (event.streams.isNotEmpty && event.streams[0].id != _localStream?.id) {
         _remoteStream = event.streams[0];
+      } else {
+        _remoteStream ??= await createLocalMediaStream('remote_stream');
+        if (!_remoteStream!.getTracks().any((t) => t.id == event.track.id)) {
+          _remoteStream!.addTrack(event.track);
+        }
       }
       unmuteAllTracks();
       if (_remoteStream != null) {
@@ -241,11 +247,12 @@ class WebRTCRepository {
       bool isExistingCall = false;
       if (data != null && data['callerId'] != userId && data['offer'] != null) {
         final status = data['status'];
-        if (status == 'calling' || status == 'connected') {
+        // ONLY join if the call is actively ringing/calling
+        if (status == 'calling') {
           final createdAt = data['createdAt'];
           if (createdAt is Timestamp) {
             final age = DateTime.now().difference(createdAt.toDate());
-            if (age.inSeconds.abs() < 180) {
+            if (age.inSeconds.abs() < 120) {
               isExistingCall = true;
             }
           } else {
@@ -273,6 +280,7 @@ class WebRTCRepository {
     _isRemoteDescriptionSet = false;
     _remoteCandidatesQueue.clear();
 
+    // Clean old candidate collections BEFORE starting peer connection to avoid deleting new candidates
     await _cleanCandidateCollection(sessionRef.collection('callerCandidates'));
     await _cleanCandidateCollection(sessionRef.collection('calleeCandidates'));
 
@@ -299,12 +307,12 @@ class WebRTCRepository {
       final data = snapshot.data() as Map<String, dynamic>?;
       if (data != null && data['status'] == 'connected' && data['answer'] != null) {
         if (!_isRemoteDescriptionSet && _peerConnection != null) {
-          _isRemoteDescriptionSet = true;
           final answer = RTCSessionDescription(
             data['answer']['sdp'],
             data['answer']['type'],
           );
           await _peerConnection!.setRemoteDescription(answer);
+          _isRemoteDescriptionSet = true;
           await _processQueuedCandidates();
           _setStatus(CallStatus.connected);
           unmuteAllTracks();
@@ -329,14 +337,15 @@ class WebRTCRepository {
     final offer = data['offer'];
     final remoteOfferDesc = RTCSessionDescription(offer['sdp'], offer['type']);
     await _peerConnection!.setRemoteDescription(remoteOfferDesc);
-    _isRemoteDescriptionSet = true;
-    await _processQueuedCandidates();
 
     final answer = await _peerConnection!.createAnswer(<String, dynamic>{
       'offerToReceiveVideo': isAudioOnly ? 0 : 1,
       'offerToReceiveAudio': 1,
     });
     await _peerConnection!.setLocalDescription(answer);
+
+    _isRemoteDescriptionSet = true;
+    await _processQueuedCandidates();
 
     await sessionRef.set({
       'status': 'connected',
@@ -405,15 +414,18 @@ class WebRTCRepository {
     if (roomId != null && _firestore != null) {
       final cleanRoomId = roomId.trim().toUpperCase();
       try {
-        await _firestore
+        final sessionRef = _firestore
             .collection('rooms')
             .doc(cleanRoomId)
             .collection('call')
-            .doc(_sessionDocName)
-            .set({
-              'status': 'rejected',
-              'endedAt': FieldValue.serverTimestamp(),
-            }, SetOptions(merge: true));
+            .doc(_sessionDocName);
+        await sessionRef.set({
+          'status': 'rejected',
+          'endedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+
+        await _cleanCandidateCollection(sessionRef.collection('callerCandidates'));
+        await _cleanCandidateCollection(sessionRef.collection('calleeCandidates'));
       } catch (e) {
         debugPrint('Error rejecting call in Firestore: $e');
       }

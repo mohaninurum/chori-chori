@@ -65,7 +65,7 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
     if (webrtcRepo.localStream != null) {
       _localRenderer.srcObject = webrtcRepo.localStream;
     }
-    if (webrtcRepo.remoteStream != null && _remoteRenderer.srcObject != webrtcRepo.remoteStream) {
+    if (webrtcRepo.remoteStream != null && webrtcRepo.remoteStream!.getVideoTracks().isNotEmpty) {
       _remoteRenderer.srcObject = webrtcRepo.remoteStream;
     }
 
@@ -78,9 +78,9 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
     };
 
     webrtcRepo.onAddRemoteStream = (stream) {
-      debugPrint('VideoCallScreen onAddRemoteStream received stream: ${stream.id}');
+      debugPrint('VideoCallScreen onAddRemoteStream received stream: ${stream.id}, video=${stream.getVideoTracks().length}, audio=${stream.getAudioTracks().length}');
       if (mounted) {
-        if (_remoteRenderer.srcObject != stream) {
+        if (stream.getVideoTracks().isNotEmpty) {
           _remoteRenderer.srcObject = stream;
         }
         setState(() {
@@ -103,7 +103,7 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
             _statusText = 'Connected';
             _isConnecting = false;
             webrtcRepo.toggleSpeaker(_isSpeakerOn);
-            if (webrtcRepo.remoteStream != null && _remoteRenderer.srcObject != webrtcRepo.remoteStream) {
+            if (webrtcRepo.remoteStream != null && webrtcRepo.remoteStream!.getVideoTracks().isNotEmpty) {
               _remoteRenderer.srcObject = webrtcRepo.remoteStream;
             }
             break;
@@ -218,61 +218,57 @@ class _VideoCallScreenState extends ConsumerState<VideoCallScreen> {
       backgroundColor: Colors.black,
       body: Stack(
         children: [
-          // Remote video: always mounted so Android native texture is ready from frame 1
+          // Remote video or Connecting View
           Positioned.fill(
-            child: RTCVideoView(
-              _remoteRenderer,
-              objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
-            ),
-          ),
-
-          // Connecting / Waiting placeholder overlay
-          if (!hasRemoteVideo)
-            Positioned.fill(
-              child: Container(
-                color: Colors.black87,
-                child: Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Container(
-                        width: 100,
-                        height: 100,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: AppTheme.primaryNeon.withOpacity(0.15),
-                          border: Border.all(color: AppTheme.primaryNeon, width: 2),
-                        ),
-                        child: const Icon(
-                          Icons.videocam,
-                          size: 48,
-                          color: AppTheme.primaryNeon,
-                        ),
-                      ),
-                      const SizedBox(height: 24),
-                      Text(
-                        _statusText,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 18,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      if (_isConnecting)
-                        const SizedBox(
-                          width: 24,
-                          height: 24,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2.5,
-                            color: AppTheme.primaryNeon,
+            child: hasRemoteVideo
+                ? RTCVideoView(
+                    _remoteRenderer,
+                    objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+                  )
+                : Container(
+                    color: Colors.black87,
+                    child: Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Container(
+                            width: 100,
+                            height: 100,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: AppTheme.primaryNeon.withOpacity(0.15),
+                              border: Border.all(color: AppTheme.primaryNeon, width: 2),
+                            ),
+                            child: const Icon(
+                              Icons.videocam,
+                              size: 48,
+                              color: AppTheme.primaryNeon,
+                            ),
                           ),
-                        ),
-                    ],
+                          const SizedBox(height: 24),
+                          Text(
+                            _statusText,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 18,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          if (_isConnecting)
+                            const SizedBox(
+                              width: 24,
+                              height: 24,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2.5,
+                                color: AppTheme.primaryNeon,
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
                   ),
-                ),
-              ),
-            ),
+          ),
 
           // Top Bar (Expiry & Back)
           SafeArea(
